@@ -89,8 +89,8 @@ html, body, [class*="css"] { font-family: Poppins, "Segoe UI", Arial, sans-serif
 }
 .stButton > button[kind="primary"]:hover,
 [data-testid="stFormSubmitButton"] > button[kind="primary"]:hover {
-    background:#0a3f7f !important;
-    border-color:#0a3f7f !important;
+    background:var(--m-wine-10) !important;
+    border-color:var(--m-wine) !important;
 }
 .stButton > button[kind="secondary"],
 [data-testid="stFormSubmitButton"] > button[kind="secondary"] {
