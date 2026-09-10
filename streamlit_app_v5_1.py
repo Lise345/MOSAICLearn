@@ -83,8 +83,8 @@ html, body, [class*="css"] { font-family: Poppins, "Segoe UI", Arial, sans-serif
 }
 .stButton > button[kind="primary"],
 [data-testid="stFormSubmitButton"] > button[kind="primary"] {
-    background:var(--m-blue) !important;
-    border-color:var(--m-blue) !important;
+    background:var(--m-wine) !important;
+    border-color:var(--m-wine) !important;
     color:#fff !important;
 }
 .stButton > button[kind="primary"]:hover,
@@ -100,9 +100,9 @@ html, body, [class*="css"] { font-family: Poppins, "Segoe UI", Arial, sans-serif
 }
 .stButton > button[kind="secondary"]:hover,
 [data-testid="stFormSubmitButton"] > button[kind="secondary"]:hover {
-    background:var(--m-blue-10) !important;
-    border-color:var(--m-blue) !important;
-    color:var(--m-blue) !important;
+    background:var(--m-wine-10) !important;
+    border-color:var(--m-wine) !important;
+    color:var(--m-wine) !important;
 }
 .stButton > button:focus-visible,
 [data-testid="stFormSubmitButton"] > button:focus-visible,
@@ -115,10 +115,10 @@ html, body, [class*="css"] { font-family: Poppins, "Segoe UI", Arial, sans-serif
     background:#f0f0ed !important; border-color:#deded9 !important; color:#8b8b87 !important; opacity:1 !important;
 }
 [data-testid="stLinkButton"] > a, .stDownloadButton > button {
-    background:#fff !important; border:1px solid var(--m-blue) !important; color:var(--m-blue) !important; text-decoration:none !important;
+    background:#fff !important; border:1px solid var(--m-wine) !important; color:var(--m-wine) !important; text-decoration:none !important;
 }
 [data-testid="stLinkButton"] > a:hover, .stDownloadButton > button:hover {
-    background:var(--m-blue-10) !important; color:var(--m-blue) !important;
+    background:var(--m-wine-10) !important; color:var(--m-wine) !important;
 }
 /* Keep native Streamlit selection states in the MOSAIC palette instead of the default pink/red. */
 [data-baseweb="tab"][aria-selected="true"] { color:var(--m-blue) !important; }
