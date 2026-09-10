@@ -890,13 +890,16 @@ def render_learning_extras(topic):
         st.markdown(
             f"<div class='m-tool-card'><div class='label'>Try the method</div><h4>{escape(tool['name'])}</h4><p>{escape(tool['description'])}</p></div>",
             unsafe_allow_html=True,
+
+            questions = topic.get("self_check") or []
+            if questions:
+                with st.expander("3-minute self-check"):
+                    st.caption("Use these as reflection prompts. You do not need to save answers here unless you want to use the reflection box below.")
+                    for idx, question in enumerate(questions, start=1):
+                        st.checkbox(question, key=f"selfcheck-{topic['id']}-{idx}")
+                    
         )
-    questions = topic.get("self_check") or []
-    if questions:
-        with st.expander("3-minute self-check"):
-            st.caption("Use these as reflection prompts. You do not need to save answers here unless you want to use the reflection box below.")
-            for idx, question in enumerate(questions, start=1):
-                st.checkbox(question, key=f"selfcheck-{topic['id']}-{idx}")
+    
 
 
 def render_quiz(user, module_id: str, topic):
