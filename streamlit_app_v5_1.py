@@ -976,13 +976,9 @@ def page_topic(user):
     if topic["id"] == "drivers-as-system":
         render_driver_visual(module)
 
-    st.markdown(
-        f"<div class='m-takeaway'><strong>Key idea</strong><br>{escape(topic['takeaway'])}</div>",
-        unsafe_allow_html=True,
-    )
-
-    render_learning_extras(topic)
     render_quiz(user, module_id, topic)
+    render_learning_extras(topic)
+    
 
     st.markdown(
         f"<div class='m-reflection'><div class='label'>Apply it to your context</div><p>{escape(topic['prompt'])}</p></div>",
