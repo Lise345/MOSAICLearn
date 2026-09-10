@@ -61,13 +61,70 @@ html, body, [class*="css"] { font-family: Poppins, "Segoe UI", Arial, sans-serif
     border-bottom: 1px solid #ecece8;
 }
 [data-testid="stHeader"] [data-testid="stToolbar"] { visibility: visible; }
-.block-container { max-width: 1180px; padding-top: 5.25rem; padding-bottom: 5rem; }
+.block-container {
+    width: min(100%, 1520px);
+    max-width: 1520px;
+    padding: 5.25rem clamp(1.25rem, 3.2vw, 3.75rem) 5rem;
+}
 [data-testid="stSidebar"] { border-right: 1px solid var(--m-line); background:#fbfbfa; }
 [data-testid="stSidebar"] [data-testid="stButton"] button { justify-content: flex-start; }
-.stButton > button { border-radius:999px; font-family:inherit; font-weight:600; min-height:2.65rem; }
-.stButton > button[kind="primary"] { background:var(--m-wine); border-color:var(--m-wine); }
-.stButton > button[kind="primary"]:hover { background:#841d2f; border-color:#841d2f; }
-.stButton > button[kind="secondary"] { border-color:#b9b9b3; }
+
+/* MOSAIC interaction system: blue for actions, green for completion/success, wine for editorial accents. */
+.stButton, [data-testid="stFormSubmitButton"], [data-testid="stLinkButton"], .stDownloadButton { margin:.38rem 0 .72rem; }
+.stButton > button,
+[data-testid="stFormSubmitButton"] > button,
+[data-testid="stLinkButton"] > a,
+.stDownloadButton > button {
+    border-radius:999px !important;
+    font-family:inherit !important;
+    font-weight:600 !important;
+    min-height:2.75rem;
+    transition:background-color .16s ease, border-color .16s ease, color .16s ease, transform .16s ease;
+}
+.stButton > button[kind="primary"],
+[data-testid="stFormSubmitButton"] > button[kind="primary"] {
+    background:var(--m-blue) !important;
+    border-color:var(--m-blue) !important;
+    color:#fff !important;
+}
+.stButton > button[kind="primary"]:hover,
+[data-testid="stFormSubmitButton"] > button[kind="primary"]:hover {
+    background:#0a3f7f !important;
+    border-color:#0a3f7f !important;
+}
+.stButton > button[kind="secondary"],
+[data-testid="stFormSubmitButton"] > button[kind="secondary"] {
+    background:#fff !important;
+    border-color:#bfc4c7 !important;
+    color:var(--m-grey) !important;
+}
+.stButton > button[kind="secondary"]:hover,
+[data-testid="stFormSubmitButton"] > button[kind="secondary"]:hover {
+    background:var(--m-blue-10) !important;
+    border-color:var(--m-blue) !important;
+    color:var(--m-blue) !important;
+}
+.stButton > button:focus-visible,
+[data-testid="stFormSubmitButton"] > button:focus-visible,
+[data-testid="stLinkButton"] > a:focus-visible,
+.stDownloadButton > button:focus-visible {
+    outline:3px solid rgba(13,79,158,.24) !important;
+    outline-offset:2px;
+}
+.stButton > button:disabled, [data-testid="stFormSubmitButton"] > button:disabled {
+    background:#f0f0ed !important; border-color:#deded9 !important; color:#8b8b87 !important; opacity:1 !important;
+}
+[data-testid="stLinkButton"] > a, .stDownloadButton > button {
+    background:#fff !important; border:1px solid var(--m-blue) !important; color:var(--m-blue) !important; text-decoration:none !important;
+}
+[data-testid="stLinkButton"] > a:hover, .stDownloadButton > button:hover {
+    background:var(--m-blue-10) !important; color:var(--m-blue) !important;
+}
+/* Keep native Streamlit selection states in the MOSAIC palette instead of the default pink/red. */
+[data-baseweb="tab"][aria-selected="true"] { color:var(--m-blue) !important; }
+[data-baseweb="tab-highlight"] { background-color:var(--m-blue) !important; }
+[data-testid="stSegmentedControl"] button[aria-pressed="true"] { background:var(--m-blue-10) !important; color:var(--m-blue) !important; border-color:var(--m-blue) !important; }
+[data-testid="stProgress"] [role="progressbar"] > div { background-color:var(--m-blue) !important; }
 [data-baseweb="tab-list"] { gap:.25rem; }
 [data-baseweb="tab"] { font-family:inherit; font-weight:600; }
 
@@ -108,13 +165,13 @@ html, body, [class*="css"] { font-family: Poppins, "Segoe UI", Arial, sans-serif
 .m-section-title p { margin:.3rem 0 0; color:var(--m-muted); }
 
 .m-track-card, .m-module-card, .m-mode-card, .m-resource-card, .m-example-card, .m-evidence-card { border:1px solid var(--m-line); background:#fff; }
-.m-track-card { border-radius:18px; padding:1.2rem; min-height:170px; border-top:5px solid var(--m-blue); }
+.m-track-card { border-radius:18px; padding:1.2rem; min-height:170px; border-top:5px solid var(--m-blue); margin-bottom:.7rem; }
 .m-track-card.community { border-top-color:var(--m-green); } .m-track-card.learning { border-top-color:var(--m-blue); } .m-track-card.empowerment { border-top-color:var(--m-ochre); }
 .m-track-icon { font-size:1.45rem; margin-bottom:.55rem; }
 .m-track-card h3 { margin:.1rem 0 .38rem; font-size:1.1rem; }
 .m-track-card p { color:var(--m-muted); margin:0; line-height:1.55; font-size:.9rem; }
 
-.m-module-card { border-radius:20px; overflow:hidden; min-height:298px; }
+.m-module-card { border-radius:20px; overflow:hidden; min-height:298px; margin-bottom:.7rem; }
 .m-module-art { height:88px; position:relative; overflow:hidden; background:#f6f6f3; }
 .m-module-art:before, .m-module-art:after { content:""; position:absolute; border-radius:15px; transform:rotate(-8deg); }
 .m-module-art:before { width:42%; height:120%; right:11%; top:-30%; }
@@ -138,7 +195,7 @@ html, body, [class*="css"] { font-family: Poppins, "Segoe UI", Arial, sans-serif
 .m-module-hero h1 { max-width:850px; margin:.4rem 0 .65rem; font-size:clamp(1.85rem,4vw,3.1rem); line-height:1.07; letter-spacing:-.03em; }
 .m-module-hero p { max-width:790px; color:#555552; line-height:1.68; }
 
-.m-mode-card { border-radius:18px; padding:1.05rem; min-height:176px; }
+.m-mode-card { border-radius:18px; padding:1.05rem; min-height:176px; margin-bottom:.7rem; }
 .m-mode-card.understand { border-top:5px solid var(--m-blue); } .m-mode-card.apply { border-top:5px solid var(--m-green); } .m-mode-card.convince { border-top:5px solid var(--m-wine); background:linear-gradient(180deg,#fff,var(--m-wine-10)); }
 .m-mode-num { color:var(--m-muted); font-size:.7rem; letter-spacing:.1em; }
 .m-mode-card h3 { margin:.35rem 0 .35rem; font-size:1.13rem; }
@@ -161,19 +218,60 @@ html, body, [class*="css"] { font-family: Poppins, "Segoe UI", Arial, sans-serif
 .m-building-card .num { font-size:.7rem; letter-spacing:.08em; color:var(--m-wine); font-weight:700; } .m-building-card b { display:block; margin:.3rem 0 .2rem; } .m-building-card span { font-size:.81rem; color:var(--m-muted); line-height:1.45; }
 .m-route-card { border:1px solid var(--m-line); border-radius:15px; padding:.95rem 1rem; background:#fff; margin:.65rem 0; } .m-route-card h4 { margin:.1rem 0 .2rem; } .m-route-card p { margin:0; color:var(--m-muted); font-size:.87rem; line-height:1.5; }
 
-.m-lesson-hero { padding:.75rem 0 .2rem; max-width:850px; } .m-lesson-hero h1 { font-size:clamp(1.8rem,4vw,2.8rem); letter-spacing:-.03em; margin:.35rem 0 .55rem; } .m-lesson-hero p { color:var(--m-muted); font-size:1rem; }
-.m-reading { max-width:820px; font-size:1.03rem; line-height:1.8; }
-.m-theory-wrap { max-width:840px; margin:.3rem 0 1rem; }
-.m-theory-card { border:1px solid var(--m-line); border-radius:18px; padding:clamp(1.25rem,3vw,2rem); background:#fff; min-height:250px; display:flex; flex-direction:column; justify-content:center; border-top:6px solid var(--m-blue); }
-.m-theory-label { text-transform:uppercase; letter-spacing:.1em; font-size:.68rem; color:var(--m-wine); font-weight:700; }
-.m-theory-card h3 { margin:.5rem 0 .6rem; font-size:clamp(1.35rem,3vw,1.85rem); letter-spacing:-.02em; } .m-theory-card p { margin:0; font-size:1.03rem; line-height:1.75; color:#4b4b48; }
-.m-theory-card ul { margin:.75rem 0 0 1.15rem; color:#4b4b48; } .m-theory-card li { margin:.3rem 0; }
-.m-theory-progress { display:flex; gap:.32rem; margin:.75rem 0 .2rem; } .m-theory-dot { height:5px; flex:1; max-width:62px; border-radius:999px; background:#e5e5e0; } .m-theory-dot.active { background:var(--m-blue); }
-.m-takeaway { max-width:820px; border-radius:15px; background:var(--m-lime-10); padding:.95rem 1rem; margin:1rem 0; border:1px solid #dfe2bd; } .m-takeaway strong { color:var(--m-green); }
-.m-reflection { max-width:820px; border-radius:16px; padding:1rem; border:1px solid var(--m-line); background:#fff; margin:1.15rem 0 .65rem; } .m-reflection .label { font-size:.7rem; text-transform:uppercase; letter-spacing:.1em; color:var(--m-wine); font-weight:700; } .m-reflection p { margin:.35rem 0 0; font-weight:600; }
-.m-practice-note { max-width:840px; border-left:5px solid var(--m-ochre); border-radius:0 15px 15px 0; background:var(--m-ochre-10); padding:.95rem 1rem; margin:1rem 0; } .m-practice-note .label { text-transform:uppercase; letter-spacing:.09em; font-size:.68rem; font-weight:700; color:#8f671a; } .m-practice-note p { margin:.35rem 0 0; line-height:1.62; }
-.m-tool-card { max-width:840px; border:1px solid #bfd6cc; border-radius:16px; background:var(--m-green-10); padding:.95rem 1rem; margin:1rem 0; } .m-tool-card .label { text-transform:uppercase; letter-spacing:.09em; font-size:.68rem; font-weight:700; color:var(--m-green); } .m-tool-card h4 { margin:.35rem 0 .28rem; } .m-tool-card p { margin:0; color:#4f5b56; line-height:1.55; }
-.m-driver-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.6rem; margin:1rem 0; } .m-driver { border-radius:15px; padding:.95rem; border:1px solid rgba(60,60,59,.14); min-height:105px; } .m-driver:nth-child(1){background:var(--m-ochre-10);border-top:4px solid var(--m-ochre)} .m-driver:nth-child(2){background:var(--m-blue-10);border-top:4px solid var(--m-blue)} .m-driver:nth-child(3){background:var(--m-cyan-10);border-top:4px solid var(--m-cyan)} .m-driver:nth-child(4){background:var(--m-green-10);border-top:4px solid var(--m-green)} .m-driver b{display:block;margin-bottom:.22rem}.m-driver span{font-size:.82rem;color:#545450}
+.m-lesson-hero { width:100%; max-width:1360px; margin:1rem auto .9rem; padding:.8rem 0 .45rem; }
+.m-lesson-hero h1 { max-width:980px; font-size:clamp(1.9rem,3.5vw,3rem); line-height:1.1; letter-spacing:-.03em; margin:.4rem 0 .6rem; }
+.m-lesson-hero p { max-width:78ch; color:var(--m-muted); font-size:1rem; line-height:1.72; }
+.m-reading { width:100%; max-width:1360px; margin:0 auto; font-size:1.03rem; line-height:1.8; }
+.m-reading-intro { width:100%; max-width:1360px; margin:1.7rem auto .9rem; }
+.m-reading-intro h3 { margin:0 0 .28rem; font-size:1.18rem; letter-spacing:-.015em; }
+.m-reading-intro p { max-width:76ch; margin:0; color:var(--m-muted); font-size:.91rem; line-height:1.62; }
+
+/* Wide visual stage, narrow readable text: the panel fills the page while line length remains comfortable. */
+.m-theory-wrap { width:100%; max-width:1360px; margin:.45rem auto 0; }
+.m-theory-card {
+    width:100%; box-sizing:border-box; border:1px solid var(--m-line); border-radius:24px;
+    padding:clamp(2rem,4vw,3.6rem) clamp(1.6rem,4.6vw,4rem);
+    background:linear-gradient(180deg,#fff 0%,#fcfcfb 100%); min-height:330px;
+    display:flex; align-items:center; border-top:7px solid var(--m-blue);
+    box-shadow:0 2px 8px rgba(60,60,59,.035);
+}
+.m-theory-inner { width:100%; max-width:920px; margin:0 auto; }
+.m-theory-label { text-transform:uppercase; letter-spacing:.11em; font-size:.72rem; color:var(--m-wine); font-weight:700; }
+.m-theory-card h3 { max-width:30ch; margin:.72rem 0 .9rem; font-size:clamp(1.65rem,2.7vw,2.3rem); line-height:1.2; letter-spacing:-.025em; }
+.m-theory-card p { max-width:76ch; margin:0; font-size:1.05rem; line-height:1.82; color:#4b4b48; }
+.m-theory-card ul { max-width:74ch; margin:1rem 0 0 1.2rem; color:#4b4b48; line-height:1.7; }
+.m-theory-card li { margin:.42rem 0; }
+.m-theory-progress { display:flex; gap:.42rem; width:min(380px,58%); margin:0 auto .95rem; }
+.m-theory-dot { height:6px; flex:1; border-radius:999px; background:#e5e5e0; }
+.m-theory-dot.active { background:var(--m-blue); }
+
+.m-takeaway, .m-reflection, .m-practice-note, .m-tool-card, .m-driver-grid { width:100%; max-width:1360px; box-sizing:border-box; }
+.m-takeaway { border-radius:18px; background:var(--m-lime-10); padding:1.2rem 1.4rem; margin:2rem auto 1.55rem; border:1px solid #dfe2bd; }
+.m-takeaway strong { color:var(--m-green); }
+.m-reflection { border-radius:18px; padding:1.2rem 1.35rem; border:1px solid var(--m-line); background:#fff; margin:2rem auto 1rem; }
+.m-reflection .label { font-size:.7rem; text-transform:uppercase; letter-spacing:.1em; color:var(--m-wine); font-weight:700; }
+.m-reflection p { max-width:78ch; margin:.45rem 0 0; font-weight:600; line-height:1.62; }
+.m-practice-note { border-left:5px solid var(--m-ochre); border-radius:0 18px 18px 0; background:var(--m-ochre-10); padding:1.15rem 1.3rem; margin:1.65rem auto; }
+.m-practice-note .label { text-transform:uppercase; letter-spacing:.09em; font-size:.68rem; font-weight:700; color:#8f671a; }
+.m-practice-note p { max-width:80ch; margin:.45rem 0 0; line-height:1.67; }
+.m-tool-card { border:1px solid #bfd6cc; border-radius:18px; background:var(--m-green-10); padding:1.15rem 1.3rem; margin:1.65rem auto; }
+.m-tool-card .label { text-transform:uppercase; letter-spacing:.09em; font-size:.68rem; font-weight:700; color:var(--m-green); }
+.m-tool-card h4 { margin:.42rem 0 .32rem; }
+.m-tool-card p { max-width:80ch; margin:0; color:#4f5b56; line-height:1.62; }
+.m-driver-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.8rem; margin:1.5rem auto; }
+
+/* Keyed layout zones prevent Streamlit controls from visually sticking to adjacent cards. */
+.st-key-theory_navigation { max-width:1360px; margin:1.15rem auto 1.9rem; }
+.st-key-theory_navigation [data-testid="stHorizontalBlock"] { align-items:center; }
+.st-key-theory_navigation [data-testid="stColumn"]:last-child [data-testid="stButton"] { display:flex; justify-content:flex-end; }
+.st-key-theory_navigation [data-testid="stButton"] { margin:.25rem 0 .45rem; }
+.st-key-theory_navigation [data-testid="stButton"] button { min-width:188px; width:auto; padding-left:1.1rem; padding-right:1.1rem; }
+.st-key-reflection_form { max-width:1120px; margin:1rem auto 1.3rem; }
+.st-key-reflection_actions { max-width:1120px; margin:.45rem auto 1.75rem; }
+.st-key-lesson_footer { max-width:1360px; margin:1.65rem auto 0; padding-top:1.25rem; border-top:1px solid var(--m-line); }
+.st-key-lesson_footer [data-testid="stButton"] { margin:.35rem 0 .55rem; }
+.m-driver { border-radius:15px; padding:.95rem; border:1px solid rgba(60,60,59,.14); min-height:105px; }
+.m-driver:nth-child(1){background:var(--m-ochre-10);border-top:4px solid var(--m-ochre)} .m-driver:nth-child(2){background:var(--m-blue-10);border-top:4px solid var(--m-blue)} .m-driver:nth-child(3){background:var(--m-cyan-10);border-top:4px solid var(--m-cyan)} .m-driver:nth-child(4){background:var(--m-green-10);border-top:4px solid var(--m-green)} .m-driver b{display:block;margin-bottom:.22rem}.m-driver span{font-size:.82rem;color:#545450}
 
 .m-convince-hero { border:1px solid var(--m-line); border-radius:22px; overflow:hidden; display:grid; grid-template-columns:minmax(0,1fr) 250px; background:#fff; margin:.35rem 0 1.2rem; }
 .m-convince-copy { padding:clamp(1.4rem,4vw,2.5rem); } .m-convince-copy h1 { margin:.4rem 0 .65rem; font-size:clamp(1.9rem,4vw,3rem); line-height:1.08; letter-spacing:-.03em; } .m-convince-copy p { color:var(--m-muted); line-height:1.65; }
@@ -189,8 +287,20 @@ html, body, [class*="css"] { font-family: Poppins, "Segoe UI", Arial, sans-serif
 .m-share-card { max-width:760px; border:1px solid var(--m-line); border-radius:18px; padding:1.25rem; background:var(--m-soft); }
 .m-community-hero { border:1px solid var(--m-line); border-radius:22px; padding:clamp(1.4rem,4vw,2.6rem); background:linear-gradient(120deg,var(--m-green-10),#fff 60%,var(--m-lime-10)); margin-bottom:1.15rem; border-top:7px solid var(--m-green); } .m-community-hero h1{margin:.35rem 0 .55rem;font-size:clamp(2rem,4vw,3rem);letter-spacing:-.03em}.m-community-hero p{max-width:760px;color:#50504d;line-height:1.65}.m-post{border:1px solid var(--m-line);border-radius:15px;padding:.95rem 1rem;background:white;margin:.65rem 0}.m-post-meta{color:var(--m-muted);font-size:.76rem;margin-bottom:.42rem}.m-post p{margin:0;white-space:pre-wrap;line-height:1.6}
 
-@media (max-width: 820px) { .m-hero{grid-template-columns:1fr}.m-hero-art{min-height:220px}.m-convince-hero{grid-template-columns:1fr}.m-convince-art{min-height:150px}.m-building-grid,.m-evidence-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.m-brandtag{display:none} }
-@media (max-width: 620px) { .block-container{padding-top:4.75rem}.m-building-grid,.m-evidence-grid,.m-resource-grid,.m-driver-grid{grid-template-columns:1fr}.m-lesson-row{grid-template-columns:38px minmax(0,1fr)}.m-lesson-time{grid-column:2}.m-theory-card{min-height:0}.m-mini-mark{width:30px;height:30px}.m-brandbar{margin-bottom:.8rem} }
+@media (max-width: 820px) {
+    .block-container{padding-left:1.25rem;padding-right:1.25rem}
+    .m-hero{grid-template-columns:1fr}.m-hero-art{min-height:220px}.m-convince-hero{grid-template-columns:1fr}.m-convince-art{min-height:150px}
+    .m-building-grid,.m-evidence-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.m-brandtag{display:none}
+    .m-theory-card{min-height:290px}.m-theory-inner{max-width:none}
+}
+@media (max-width: 620px) {
+    .block-container{padding-top:4.75rem;padding-left:1rem;padding-right:1rem}
+    .m-building-grid,.m-evidence-grid,.m-resource-grid,.m-driver-grid{grid-template-columns:1fr}
+    .m-lesson-row{grid-template-columns:38px minmax(0,1fr)}.m-lesson-time{grid-column:2}
+    .m-theory-card{min-height:0;padding:1.5rem 1.25rem;border-radius:19px}.m-theory-progress{width:78%;margin-bottom:.75rem}
+    .st-key-theory_navigation [data-testid="stButton"] button{min-width:0;width:100%;font-size:.86rem}
+    .m-mini-mark{width:30px;height:30px}.m-brandbar{margin-bottom:.8rem}
+}
 </style>
 """,
     unsafe_allow_html=True,
@@ -698,7 +808,7 @@ def render_driver_visual(module):
     cards = "".join(
         f"<div class='m-driver'><b>{escape(title)}</b><span>{escape(detail)}</span></div>" for title, detail in groups
     )
-    st.markdown("#### The driver system", unsafe_allow_html=True)
+    st.markdown("<div class='m-reading-intro'><h3>The driver system</h3></div>", unsafe_allow_html=True)
     st.markdown(
         f"<div class='m-driver-grid'>{cards}</div><p class='m-muted m-small'>The point is not to choose one box. Ask how these forces interact in place and for a specific actor.</p>",
         unsafe_allow_html=True,
@@ -717,8 +827,11 @@ def render_theory_story(module_id: str, topic):
     step = max(1, min(len(cards), step))
     st.session_state[state_key] = step
 
-    st.markdown("### Read the theory one idea at a time")
-    st.caption("Use the arrows to move through the ideas. One concept stays on screen at a time so the theory remains easy to scan and revisit.")
+    st.markdown(
+        "<div class='m-reading-intro'><h3>Read the theory one idea at a time</h3>"
+        "<p>Move with the arrows. Each screen keeps one idea in focus, while the text itself stays at a comfortable reading width.</p></div>",
+        unsafe_allow_html=True,
+    )
 
     item = cards[step - 1]
     bullets = ""
@@ -727,43 +840,43 @@ def render_theory_story(module_id: str, topic):
     dots = "".join(
         f"<span class='m-theory-dot {'active' if idx == step else ''}'></span>" for idx in range(1, len(cards) + 1)
     )
-    st.markdown(
-        f"""
-        <div class='m-theory-wrap'>
-            <div class='m-theory-progress'>{dots}</div>
-            <div class='m-theory-card'>
-                <div class='m-theory-label'>{escape(item.get('label', 'Core idea'))} · {step}/{len(cards)}</div>
-                <h3>{escape(item['title'])}</h3>
-                <p>{escape(item['text'])}</p>
-                {bullets}
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
+
+    # Keep this HTML on one logical line. Indented closing tags can be parsed as
+    # Markdown code blocks by some Streamlit/Markdown combinations.
+    card_html = (
+        "<div class='m-theory-wrap'>"
+        f"<div class='m-theory-progress' aria-label='Theory progress: step {step} of {len(cards)}'>{dots}</div>"
+        "<div class='m-theory-card'><div class='m-theory-inner'>"
+        f"<div class='m-theory-label'>{escape(item.get('label', 'Core idea'))} · {step}/{len(cards)}</div>"
+        f"<h3>{escape(item['title'])}</h3>"
+        f"<p>{escape(item['text'])}</p>"
+        f"{bullets}"
+        "</div></div></div>"
     )
+    st.markdown(card_html, unsafe_allow_html=True)
 
     def _set_story_step(target: int):
         st.session_state[state_key] = max(1, min(len(cards), target))
 
-    prev_col, spacer, next_col = st.columns([1, 2.4, 1])
-    with prev_col:
-        st.button(
-            "← Previous idea",
-            key=f"theory-prev-{module_id}-{topic['id']}",
-            disabled=step <= 1,
-            use_container_width=True,
-            on_click=_set_story_step,
-            args=(step - 1,),
-        )
-    with next_col:
-        st.button(
-            "Next idea →",
-            key=f"theory-next-{module_id}-{topic['id']}",
-            disabled=step >= len(cards),
-            use_container_width=True,
-            on_click=_set_story_step,
-            args=(step + 1,),
-        )
+    # A dedicated navigation row keeps controls aligned with the theory panel and gives them breathing room.
+    with st.container(key="theory_navigation"):
+        prev_col, next_col = st.columns(2, gap="large")
+        with prev_col:
+            st.button(
+                "← Previous idea",
+                key=f"theory-prev-{module_id}-{topic['id']}",
+                disabled=step <= 1,
+                on_click=_set_story_step,
+                args=(step - 1,),
+            )
+        with next_col:
+            st.button(
+                "Next idea →",
+                key=f"theory-next-{module_id}-{topic['id']}",
+                disabled=step >= len(cards),
+                on_click=_set_story_step,
+                args=(step + 1,),
+            )
 
 
 def render_learning_extras(topic):
@@ -875,57 +988,59 @@ def page_topic(user):
         f"<div class='m-reflection'><div class='label'>Apply it to your context</div><p>{escape(topic['prompt'])}</p></div>",
         unsafe_allow_html=True,
     )
-    reflection = st.text_area(
-        "Your reflection",
-        value=saved.get("reflection", "") or "",
-        key=f"reflection-{module_id}-{topic['id']}",
-        placeholder="Capture a short observation, example or question you want to remember.",
-        height=130,
-    )
-    st.caption("Saved reflections are collected in your Profile under My reflection notebook.")
+    with st.container(key="reflection_form"):
+        reflection = st.text_area(
+            "Your reflection",
+            value=saved.get("reflection", "") or "",
+            key=f"reflection-{module_id}-{topic['id']}",
+            placeholder="Capture a short observation, example or question you want to remember.",
+            height=130,
+        )
+        st.caption("Saved reflections are collected in your Profile under My reflection notebook.")
 
-    action1, action2 = st.columns([1, 1])
-    with action1:
-        if st.button("Save reflection", key=f"save-{module_id}-{topic['id']}", use_container_width=True):
-            save_topic_progress(
-                user["user_id"],
-                module_id,
-                topic["id"],
-                reflection=reflection,
-            )
-            st.success("Reflection saved to your profile")
-    with action2:
-        if not saved.get("completed"):
-            complete_label = "Complete & continue →" if next_topic else "Complete learning path ✓"
-            if st.button(complete_label, key=f"complete-{module_id}-{topic['id']}", type="primary", use_container_width=True):
+    with st.container(key="reflection_actions"):
+        action1, action2 = st.columns([1, 1], gap="medium")
+        with action1:
+            if st.button("Save reflection", key=f"save-{module_id}-{topic['id']}", use_container_width=True):
                 save_topic_progress(
                     user["user_id"],
                     module_id,
                     topic["id"],
-                    completed=True,
                     reflection=reflection,
                 )
-                if next_topic:
-                    navigate("topic", module_id, next_topic["id"])
-                else:
-                    navigate("module", module_id)
-        else:
-            st.success("✓ Lesson completed")
-            if st.button("Mark incomplete", key=f"incomplete-{module_id}-{topic['id']}", use_container_width=True):
-                save_topic_progress(user["user_id"], module_id, topic["id"], completed=False)
-                st.rerun()
+                st.success("Reflection saved to your profile")
+        with action2:
+            if not saved.get("completed"):
+                complete_label = "Complete & continue →" if next_topic else "Complete learning path ✓"
+                if st.button(complete_label, key=f"complete-{module_id}-{topic['id']}", type="primary", use_container_width=True):
+                    save_topic_progress(
+                        user["user_id"],
+                        module_id,
+                        topic["id"],
+                        completed=True,
+                        reflection=reflection,
+                    )
+                    if next_topic:
+                        navigate("topic", module_id, next_topic["id"])
+                    else:
+                        navigate("module", module_id)
+            else:
+                st.success("✓ Lesson completed")
+                if st.button("Mark incomplete", key=f"incomplete-{module_id}-{topic['id']}", use_container_width=True):
+                    save_topic_progress(user["user_id"], module_id, topic["id"], completed=False)
+                    st.rerun()
 
-    st.divider()
-    prev_col, mid_col, next_col = st.columns([1, 1, 1])
-    with prev_col:
-        if previous_topic and st.button("← Previous lesson", use_container_width=True):
-            navigate("topic", module_id, previous_topic["id"])
-    with mid_col:
-        if st.button("Learning path", use_container_width=True):
-            navigate("module", module_id)
-    with next_col:
-        if next_topic and st.button("Next lesson →", use_container_width=True):
-            navigate("topic", module_id, next_topic["id"])
+    with st.container(key="lesson_footer"):
+        prev_col, mid_col, next_col = st.columns([1, 1, 1], gap="medium")
+        with prev_col:
+            if previous_topic and st.button("← Previous lesson", use_container_width=True):
+                navigate("topic", module_id, previous_topic["id"])
+        with mid_col:
+            if st.button("Learning path", use_container_width=True):
+                navigate("module", module_id)
+        with next_col:
+            if next_topic and st.button("Next lesson →", use_container_width=True):
+                navigate("topic", module_id, next_topic["id"])
 
 
 def page_convince(user):
