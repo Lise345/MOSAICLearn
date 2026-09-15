@@ -155,7 +155,7 @@ MODULES = {
                 "takeaway": "A useful focus sits where policy urgency, research relevance and societal concern overlap.",
                 "prompt": "Write your challenge in one sentence, then add: why does this matter now?",
                 "practice_note": "In the Swiss Policy Lab, upcoming spatial planning decisions for large-scale solar created a concrete policy window. In Belgium, allowing stakeholders to help shape the topic strengthened ownership.",
-                "tool": {"name": "Finding Your Focus", "description": "Use three prompts — societal concern, policy opportunity and knowledge need — to define a shared Core Focus."},
+                "tool": {"id": "finding-your-focus", "name": "Finding Your Focus", "description": "Use three prompts — societal concern, policy opportunity and knowledge need — to define a shared Core Focus."},
                 "self_check": [
                     "Do researchers, policymakers and stakeholders describe the challenge in similar terms?",
                     "Can people explain why the issue matters now?",
@@ -196,7 +196,7 @@ MODULES = {
                 "takeaway": "Choose a Core Group for its ability to connect worlds and sustain the process, not only for formal expertise.",
                 "prompt": "Who are the two or three people who can move your Policy Lab forward, and what does each need from the collaboration?",
                 "practice_note": "MOSAIC Policy Labs encountered tacit knowledge, staff turnover, multiple hats and differences in professional language. Informal conversations about personal ambitions helped build common understanding.",
-                "tool": {"name": "Define Your Core Group", "description": "Clarify strengths, roles, responsibilities, meeting rhythm and the profiles needed for functions such as policy lead and knowledge broker."},
+                "tool": {"id": "define-core-group", "name": "Define Your Core Group", "description": "Clarify strengths, roles, responsibilities, meeting rhythm and the profiles needed for functions such as policy lead and knowledge broker."},
                 "self_check": [
                     "Who is best at facilitating and moderating?",
                     "Who connects to policymakers and who connects to local stakeholders?",
@@ -237,7 +237,7 @@ MODULES = {
                 "takeaway": "Map what matters: policies, actors, relationships, governance levels and decision moments.",
                 "prompt": "Which one policy process is most relevant to your challenge, and where is the next realistic point of influence?",
                 "practice_note": "The Belgian Policy Lab used mapping to expose fragmentation across grassland policies. The Portuguese Policy Lab used policy-cycle mapping to improve the timing of engagement.",
-                "tool": {"name": "Policy Mapping", "description": "Build a focused picture of relevant policies, actors, decision points and stages in the policy cycle."},
+                "tool": {"id": "policy-mapping", "name": "Policy Mapping", "description": "Build a focused picture of relevant policies, actors, decision points and stages in the policy cycle."},
                 "self_check": [
                     "Do you know which policies directly affect your focus?",
                     "Can you locate them in the policy cycle?",
@@ -287,7 +287,7 @@ MODULES = {
                 "takeaway": "Do not only ask who should attend. Ask who shapes outcomes, who is missing, and what meaningful participation looks like for each group.",
                 "prompt": "Name one actor you may be overlooking. What would make participation worthwhile and safe for them?",
                 "practice_note": "Belgian participants were highly engaged when local actors helped shape the process early and could build on existing networks. The Portuguese Policy Lab found that online participation could limit informal connection and openness.",
-                "tool": {"name": "Stakeholder Analysis", "description": "Use influence, interest and other dimensions to identify, prioritise and revisit who should be involved and how."},
+                "tool": {"id": "stakeholder-analysis", "name": "Stakeholder Analysis", "description": "Use influence, interest and other dimensions to identify, prioritise and revisit who should be involved and how."},
                 "self_check": [
                     "Who really shapes decisions, and who is missing?",
                     "Where do resistance, support or silence come from?",
@@ -328,7 +328,7 @@ MODULES = {
                 "takeaway": "Ask how each interaction contributes to the overall journey — not only what the next event is.",
                 "prompt": "What is the next real policy or project date you must meet, and which stakeholder interaction should happen before it?",
                 "practice_note": "Some MOSAIC Policy Labs used a 'plug-in' approach, connecting to existing meetings instead of creating new events. Teams also reported stakeholder fatigue when repeated interactions did not show visible progress.",
-                "tool": {"name": "Timeline Workshop", "description": "Place policy deadlines and institutional rhythms first, then research milestones and stakeholder interactions, and sense-check the sequence for overload and gaps."},
+                "tool": {"id": "timeline-workshop", "name": "Timeline Workshop", "description": "Place policy deadlines and institutional rhythms first, then research milestones and stakeholder interactions, and sense-check the sequence for overload and gaps."},
                 "self_check": [
                     "Can you explain the flow from one interaction to the next?",
                     "Are you using existing meetings or policy moments where useful?",
@@ -369,7 +369,7 @@ MODULES = {
                 "takeaway": "A clear main message says what this is, why now, what you will contribute and what you want the audience to do.",
                 "prompt": "Write a 30-second message for one specific audience. End with the role or action you want from them.",
                 "practice_note": "MOSAIC teams found that messages needed to clarify the contribution of the Policy Lab, adapt to place and audience, and use the right existing channels to reach decision-makers.",
-                "tool": {"name": "30-second message", "description": "Draft one short message around purpose, timing, contribution and a clear ask, then adapt it for a second audience."},
+                "tool": {"id": "30-second-message", "name": "30-second message", "description": "Draft one short message around purpose, timing, contribution and a clear ask, then adapt it for a second audience."},
                 "self_check": [
                     "How much of your message explains the challenge versus your own ambition?",
                     "Is the expected role of the audience clear?",
@@ -497,6 +497,11 @@ MODULES = {
                 ],
                 "takeaway": "Economic viability can open the door, but uptake can also depend on trust, autonomy, identity, place attachment, risk, succession, social networks, and fit with local reality.",
                 "prompt": "Where does an implementation gap appear in your own policy, research, or field context?",
+                "tool": {
+                    "id": "causal-loop-diagram",
+                    "name": "Causal loop diagram (CLD)",
+                    "description": "Map the variables behind a land-use decision, connect causes and effects, and mark whether each relationship moves in the same or opposite direction.",
+                },
                 "quiz": {
                     "question": "Why may a financial incentive be insufficient on its own?",
                     "options": [
@@ -712,6 +717,168 @@ MODULES["drivers"]["convince"] = {
     ),
     "author_source_url": "https://coda.io/d/_dtYXixv6BDC/Convince-under-construction_su_36hW4",
 }
+
+# -----------------------------------------------------------------------------
+# TOOL DOWNLOAD FILES - EDIT THIS SECTION
+# -----------------------------------------------------------------------------
+# 1. Put each .docx or .pdf file in: assets/tools/
+# 2. Add only its filename to the matching list below.
+# 3. You may add a Word file, a PDF, or both. The app creates the buttons.
+#
+# Example:
+# "causal-loop-diagram": ["causal-loop-diagram.docx", "causal-loop-diagram.pdf"],
+TOOL_DOWNLOAD_FILES = {
+    "causal-loop-diagram": [],
+    "finding-your-focus": [],
+    "define-core-group": [],
+    "policy-mapping": [],
+    "stakeholder-analysis": [],
+    "timeline-workshop": [],
+    "30-second-message": [],
+}
+
+
+TOOL_DEFINITIONS = {
+    "causal-loop-diagram": {
+        "title": "Causal loop diagram (CLD)",
+        "module_id": "drivers",
+        "topic_id": "implementation-gap",
+        "duration": "20–30 min",
+        "format": "Interactive diagram",
+        "description": (
+            "Turn a list of drivers into a system map. Add variables, connect causes and effects, "
+            "and label whether each relationship moves in the same (+) or opposite (-) direction."
+        ),
+        "outcome": "A downloadable causal-loop diagram and a short leverage-point reflection.",
+        "steps": [
+            "Name the decision or land-use outcome at the centre of the analysis.",
+            "Add concrete variables that can increase or decrease over time.",
+            "Connect variables, assign polarity, and look for feedback loops or leverage points.",
+        ],
+        "kind": "cld",
+    },
+    "finding-your-focus": {
+        "title": "Finding Your Focus",
+        "module_id": "policy-lab",
+        "topic_id": "focus",
+        "duration": "15–20 min",
+        "format": "Guided worksheet",
+        "description": "Find the overlap between a societal concern, a real policy opportunity, and a genuine knowledge need.",
+        "outcome": "A one-sentence Core Focus with a clear reason to act now.",
+        "steps": [
+            "Describe each side of the focus triangle separately.",
+            "Look for the overlap that matters to policy, research, and society.",
+            "Write one shared focus and test whether it explains why action is timely.",
+        ],
+        "prompts": [
+            ("Societal concern", "What is happening, who is affected, and why does it matter?"),
+            ("Policy opportunity", "Which decision, revision, programme, or implementation moment creates an opening?"),
+            ("Knowledge need", "What must be understood or tested before people can act with confidence?"),
+            ("Core Focus", "Bring the three elements together in one sentence, including why this matters now."),
+        ],
+    },
+    "define-core-group": {
+        "title": "Define Your Core Group",
+        "module_id": "policy-lab",
+        "topic_id": "core-group",
+        "duration": "20–30 min",
+        "format": "Team canvas",
+        "description": "Clarify the small steering team, the functions it must cover, and how the group will work together.",
+        "outcome": "A practical Core Group brief covering people, roles, gaps, and working rhythm.",
+        "steps": [
+            "Start with the functions the group must perform, not a list of familiar names.",
+            "Match people to roles and make bridging or facilitation responsibilities explicit.",
+            "Agree how knowledge, decisions, and continuity will be maintained.",
+        ],
+        "prompts": [
+            ("Core members", "Who needs to be in the small steering group, and what perspective does each person bring?"),
+            ("Roles and responsibilities", "Who leads policy connections, research, facilitation, coordination, and knowledge brokering?"),
+            ("Strengths and gaps", "What can this group already do well, and which missing profile or network could weaken it?"),
+            ("Working rhythm", "How often will the group meet, decide, document, and bring in wider expertise?"),
+        ],
+    },
+    "policy-mapping": {
+        "title": "Policy Mapping",
+        "module_id": "policy-lab",
+        "topic_id": "policy-mapping",
+        "duration": "30–45 min",
+        "format": "Decision map",
+        "description": "Locate relevant policies, institutions, actors, decision points, and timing around the shared challenge.",
+        "outcome": "A focused map of where and when the Policy Lab can realistically influence a decision.",
+        "steps": [
+            "Choose one decision process that is central to the Core Focus.",
+            "Map formal authority, informal influence, governance levels, and the current policy stage.",
+            "Identify the next realistic entry point and what evidence or relationship it requires.",
+        ],
+        "prompts": [
+            ("Policy process", "Which policy, plan, programme, or implementation process matters most?"),
+            ("Decision landscape", "Who decides, who influences, and how do governance levels connect?"),
+            ("Timing", "Where is the process now, and what is the next decision moment?"),
+            ("Entry point", "Where could the Policy Lab make a useful contribution, with what evidence or interaction?"),
+        ],
+    },
+    "stakeholder-analysis": {
+        "title": "Stakeholder Analysis",
+        "module_id": "policy-lab",
+        "topic_id": "stakeholders",
+        "duration": "30–45 min",
+        "format": "Engagement canvas",
+        "description": "Identify who is affected, influential, missing, or sceptical and decide how each should be involved.",
+        "outcome": "A prioritised stakeholder picture and an initial engagement approach.",
+        "steps": [
+            "List stakeholders across policy, research, practice, markets, and civil society.",
+            "Compare influence, interest, impact, stance, and whose voice is missing.",
+            "Choose an appropriate role and next contact for the priority groups.",
+        ],
+        "prompts": [
+            ("Stakeholder landscape", "Who is affected, who can influence the outcome, and who holds relevant knowledge?"),
+            ("Priorities", "Which actors have high influence, high interest, high impact, or a critical missing perspective?"),
+            ("Risks and relationships", "Who may be sceptical, over-consulted, hard to reach, or in conflict with others?"),
+            ("Engagement plan", "Who should inform, advise, co-design, decide, or help deliver—and what is the next contact?"),
+        ],
+    },
+    "timeline-workshop": {
+        "title": "Timeline Workshop",
+        "module_id": "policy-lab",
+        "topic_id": "workplan",
+        "duration": "30–45 min",
+        "format": "Sequencing worksheet",
+        "description": "Sequence policy deadlines, research tasks, and stakeholder interactions around real decision moments.",
+        "outcome": "A coherent workplan with dependencies, pressure points, and gaps made visible.",
+        "steps": [
+            "Place fixed policy dates and institutional rhythms on the timeline first.",
+            "Work backwards to position research outputs and stakeholder interactions.",
+            "Sense-check dependencies, overload, quiet periods, and ownership.",
+        ],
+        "prompts": [
+            ("Decision moments", "Which dates, windows, or institutional rhythms cannot move?"),
+            ("Research milestones", "What knowledge must be ready, in which form, and by when?"),
+            ("Stakeholder interactions", "Which conversations, workshops, or feedback moments must happen before decisions?"),
+            ("Dependencies and risks", "What must happen first, where could the sequence fail, and who owns the response?"),
+        ],
+    },
+    "30-second-message": {
+        "title": "30-second message",
+        "module_id": "policy-lab",
+        "topic_id": "main-message",
+        "duration": "10–15 min",
+        "format": "Message builder",
+        "description": "Shape a concise message around purpose, timing, contribution, audience relevance, and a clear ask.",
+        "outcome": "A reusable short pitch plus the ingredients for an audience-specific version.",
+        "steps": [
+            "Choose one real audience and the one thing they should understand or do.",
+            "Combine purpose, why now, the Policy Lab contribution, and a clear ask.",
+            "Read it aloud, remove jargon, and adapt it for a second audience.",
+        ],
+        "prompts": [
+            ("Audience", "Who are you speaking to, and what matters to them?"),
+            ("Purpose and timing", "What is the challenge, and why does it need attention now?"),
+            ("Contribution", "What will the Policy Lab make possible that is difficult today?"),
+            ("Clear ask", "What specific contribution, decision, or next step do you want from this audience?"),
+        ],
+    },
+}
+
 
 ROLE_CALLOUTS = {
     "Policy / public administration": (

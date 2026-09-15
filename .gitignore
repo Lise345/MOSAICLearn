@@ -1,0 +1,9 @@
+.venv/
+venv/
+__pycache__/
+*.pyc
+mosaic_learn.db
+.streamlit/secrets.toml
+.vscode/
+.DS_Store
+Thumbs.db
