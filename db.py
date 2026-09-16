@@ -6,6 +6,7 @@ import secrets
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
+from threading import Lock
 from typing import Any
 
 try:
@@ -15,8 +16,15 @@ except ImportError:  # SQLite development mode does not require psycopg at runti
     psycopg = None
     dict_row = None
 
+try:
+    from psycopg_pool import ConnectionPool
+except ImportError:  # SQLite development mode does not require the PostgreSQL pool.
+    ConnectionPool = None
+
 DB_PATH = Path(os.getenv("MOSAIC_DB_PATH", Path(__file__).with_name("mosaic_learn.db")))
 _DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
+_DATABASE_POOL = None
+_POOL_LOCK = Lock()
 
 
 def configure_database(database_url: str | None = None) -> None:
@@ -25,13 +33,42 @@ def configure_database(database_url: str | None = None) -> None:
     A PostgreSQL/Supabase connection string enables production persistence.
     Without one, MOSAIC Learn falls back to a local SQLite database for development.
     """
-    global _DATABASE_URL
+    global _DATABASE_URL, _DATABASE_POOL
     if database_url:
-        _DATABASE_URL = str(database_url).strip()
+        configured_url = str(database_url).strip()
+        if configured_url != _DATABASE_URL:
+            if _DATABASE_POOL is not None:
+                _DATABASE_POOL.close()
+                _DATABASE_POOL = None
+            _DATABASE_URL = configured_url
 
 
 def database_backend() -> str:
     return "postgres" if _DATABASE_URL.startswith(("postgresql://", "postgres://")) else "sqlite"
+
+
+def _postgres_pool():
+    """Create one small, process-wide pool for the Streamlit app."""
+    global _DATABASE_POOL
+    if ConnectionPool is None:
+        raise RuntimeError(
+            "PostgreSQL pooling is configured but psycopg-pool is not installed. "
+            "Install dependencies from requirements.txt."
+        )
+    if _DATABASE_POOL is None:
+        with _POOL_LOCK:
+            if _DATABASE_POOL is None:
+                _DATABASE_POOL = ConnectionPool(
+                    conninfo=_DATABASE_URL,
+                    kwargs={"row_factory": dict_row},
+                    min_size=1,
+                    max_size=5,
+                    timeout=10,
+                    max_idle=300,
+                    max_lifetime=1800,
+                    open=True,
+                )
+    return _DATABASE_POOL
 
 
 def _connect():
@@ -41,7 +78,7 @@ def _connect():
                 "PostgreSQL is configured but psycopg is not installed. "
                 "Install dependencies from requirements.txt."
             )
-        return psycopg.connect(_DATABASE_URL, row_factory=dict_row)
+        return _postgres_pool().connection()
 
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
@@ -57,6 +94,19 @@ def _dict(row: Any) -> dict | None:
     if row is None:
         return None
     return dict(row)
+
+
+def _normalise_user(row: Any) -> dict | None:
+    data = _dict(row)
+    if not data:
+        return None
+    try:
+        data["interests"] = json.loads(data.get("interests_json") or "[]")
+    except (TypeError, json.JSONDecodeError):
+        data["interests"] = []
+    data["profile_complete"] = bool(data.get("profile_complete"))
+    data["account_role"] = data.get("account_role") or "learner"
+    return data
 
 
 def _now() -> str:
@@ -300,11 +350,13 @@ def ensure_user(
                     auth_issuer=excluded.auth_issuer,
                     auth_subject=excluded.auth_subject,
                     updated_at=excluded.updated_at
+                RETURNING *
                 """
             ),
             (user_id, email, name, auth_issuer, auth_subject, now, now),
         )
-    return get_user(user_id) or {}
+        stored = cur.fetchone()
+    return _normalise_user(stored) or {}
 
 
 def update_user_profile(
@@ -349,16 +401,7 @@ def upsert_user(user_id: str, email: str, name: str, role: str = "") -> None:
 def get_user(user_id: str) -> dict | None:
     with _connect() as conn:
         row = conn.execute(_query("SELECT * FROM users WHERE user_id=?"), (user_id,)).fetchone()
-    data = _dict(row)
-    if not data:
-        return None
-    try:
-        data["interests"] = json.loads(data.get("interests_json") or "[]")
-    except (TypeError, json.JSONDecodeError):
-        data["interests"] = []
-    data["profile_complete"] = bool(data.get("profile_complete"))
-    data["account_role"] = data.get("account_role") or "learner"
-    return data
+    return _normalise_user(row)
 
 
 def list_users() -> list[dict]:
