@@ -542,7 +542,7 @@ MODULES = {
         "description": (
             "Move from a desirable nature-positive land-use future to practical pathways and regionally relevant action."
         ),
-        "estimated_minutes": 57,
+        "estimated_minutes": 63,
         "status": "Available",
         "eyebrow": "From vision to pathways and regional relevance",
         "source_note": (
@@ -552,6 +552,7 @@ MODULES = {
         "learning_outcomes": [
             "Understand what a nature-positive vision is.",
             "Use the Nature Futures Framework to work with different ways of valuing nature.",
+            "Create a vision either from scratch through participatory visioning or from pre-defined policy objectives.",
             "Develop pathways from a shared vision towards transformations and action.",
             "Contextualise pathways into place-specific priorities and policy options.",
         ],
@@ -661,12 +662,12 @@ MODULES = {
             },
             {
                 "id": "create-vision",
-                "title": "Create a shared vision",
+                "title": "Create a vision from scratch",
                 "level": "Apply",
-                "minutes": 12,
-                "summary": "Define a desirable future state that is transformative, imaginable and connected to people's values.",
+                "minutes": 9,
+                "summary": "Co-create a desirable future through a participatory visioning process.",
                 "body": (
-                    "A vision initiates a change trajectory by giving people an appealing and inspiring image of a more sustainable future."
+                    "An appealing and inspiring vision can initiate a change trajectory towards a more sustainable future, society or system."
                 ),
                 "theory_cards": [
                     card(
@@ -680,8 +681,8 @@ MODULES = {
                         "Step 2",
                     ),
                     card(
-                        "Choose how the vision will be created",
-                        "Co-create the vision through a participatory visioning process, or use existing negotiated policy objectives as a shared vision developed in a real-world setting. In either route, clarify whose values and priorities are represented.",
+                        "Co-create the vision through participatory visioning",
+                        "Develop the nature-positive future with the people involved rather than starting from a pre-defined policy target. Use a participatory visioning process to contextualise the future and build a shared image of where the transition should lead.",
                         "Step 3",
                     ),
                     card(
@@ -696,18 +697,77 @@ MODULES = {
                     ),
                 ],
                 "takeaway": "A useful vision is desirable, shared, explicit about its values, and far enough away to enable transformational thinking without losing relevance for action.",
-                "practice_note": "The European Policy Lab used existing, negotiated EU policy objectives as a shared vision and then identified and categorised objectives relevant to the land system.",
-                "prompt": "Write one or two sentences describing the desirable future state for your context. Which assumptions, values and voices need to be made visible?",
+                "prompt": "Starting without a pre-defined policy target, write one or two sentences describing the desirable future state for your context. Whose desires, assumptions, beliefs and values need to shape it?",
                 "tool": {
                     "id": "nature-positive-vision",
-                    "name": "Nature-positive vision canvas",
-                    "description": "Define the future state, time horizon, value perspectives, participants and assumptions that shape your vision.",
+                    "name": "Vision from scratch canvas",
+                    "description": "Co-create the future state, time horizon, value perspectives, participants and assumptions that shape the vision.",
                 },
                 "quiz": None,
                 "self_check": [
                     "The vision is far enough away to move beyond today's constraints but remains imaginable.",
                     "The process makes values, assumptions and represented voices explicit.",
                     "The vision keeps nature and people at the centre.",
+                ],
+            },
+            {
+                "id": "vision-from-policy-objectives",
+                "title": "Create a vision from EU policy objectives",
+                "level": "Apply",
+                "minutes": 9,
+                "summary": "Use existing, negotiated policy targets as a shared nature-positive vision.",
+                "body": (
+                    "Long-term policy objectives can act as participatory positive visions that were developed and negotiated in a real-world setting."
+                ),
+                "theory_cards": [
+                    card(
+                        "Start from the existing policy landscape",
+                        "Identify the frameworks for sustainable transformation and transition that shape the relevant regional, national and international policy landscape. Focus on the objectives that are relevant to the land system and the challenge being addressed.",
+                        "Step 1",
+                    ),
+                    card(
+                        "Select negotiated policy targets",
+                        "Use existing policy targets that have been developed and negotiated amongst a wide range of actors. Treat long-term objectives as participatory positive visions to be achieved, rather than beginning with a new visioning process.",
+                        "Step 2",
+                    ),
+                    card(
+                        "Identify and categorise the objectives",
+                        "Build the policy-objective-based vision through a multi-step process that identifies and categorises relevant objectives in the policy landscape. Make their time horizons and intended changes visible.",
+                        "Step 3",
+                    ),
+                    card(
+                        "Translate the objectives into a future state",
+                        "Bring the selected objectives together as a coherent description of a nature-positive land system. Use the Nature Futures Framework to keep nature and people at the centre and connect the envisioned future to its underpinning value expressions.",
+                        "Step 4",
+                    ),
+                    card(
+                        "Keep the distinction between targets and pathways clear",
+                        "The policy objectives describe the future to be achieved. The transformations, measures and actions that lead towards that future belong to the pathway and are developed in the next part.",
+                        "Take into account",
+                    ),
+                ],
+                "takeaway": "A policy-objective-based vision uses negotiated long-term targets as the shared destination, then makes their combined nature-positive future explicit before pathways are developed.",
+                "practice_note": "The European Policy Lab in MOSAIC used existing, negotiated EU policy targets as a shared vision and identified and categorised policy objectives relevant to the European land system.",
+                "prompt": "Which EU policy objectives are relevant to your land-use challenge, and what shared future state do they describe when considered together?",
+                "tool": {
+                    "id": "policy-objective-vision",
+                    "name": "Policy-objective vision canvas",
+                    "description": "Identify and categorise relevant EU policy objectives and translate them into a coherent shared vision.",
+                },
+                "quiz": {
+                    "question": "What distinguishes a policy-objective-based vision from a vision created from scratch?",
+                    "options": [
+                        "It uses existing, negotiated long-term policy targets as the shared future to be achieved.",
+                        "It begins by listing actions without defining a future state.",
+                        "It replaces participation with a prediction of the most likely future.",
+                    ],
+                    "answer": 0,
+                    "explanation": "This route begins with existing, negotiated policy targets and brings them together as a shared positive vision before developing pathways.",
+                },
+                "self_check": [
+                    "The relevant policy objectives and time horizons have been identified.",
+                    "The objectives have been categorised and combined into a coherent future state.",
+                    "The vision remains distinct from the measures and actions that form its pathways.",
                 ],
             },
             {
@@ -1013,6 +1073,7 @@ MODULES["drivers"]["convince"] = {
 TOOL_DOWNLOAD_FILES = {
     "causal-loop-diagram": [],
     "nature-positive-vision": [],
+    "policy-objective-vision": [],
     "nff-pathway-builder": [],
     "regional-pathway-canvas": [],
     "finding-your-focus": [],
@@ -1044,25 +1105,48 @@ TOOL_DEFINITIONS = {
         "kind": "cld",
     },
     "nature-positive-vision": {
-        "title": "Nature-positive vision canvas",
+        "title": "Vision from scratch canvas",
         "module_id": "future-pathways",
         "topic_id": "create-vision",
         "duration": "30–45 min",
         "format": "Vision canvas",
         "description": (
-            "Describe a desirable future state, make its values and assumptions explicit, and choose a process for creating shared ownership."
+            "Co-create a desirable future state through participatory visioning and make its values and assumptions explicit."
         ),
         "outcome": "A concise nature-positive vision with a time horizon, represented perspectives and clear assumptions.",
         "steps": [
             "Describe the desirable ecological, social and economic characteristics of the future state.",
             "Use the three Nature Futures Framework perspectives to make value choices and missing voices visible.",
-            "Check that the horizon enables transformational thinking while remaining relevant for action.",
+            "Check that the horizon enables transformational thinking while remaining relevant for action, and build shared ownership through participation.",
         ],
         "prompts": [
             ("Future state", "What does the desirable nature-positive future look like?"),
             ("Time horizon", "Which horizon is far enough to escape today's constraints but close enough to remain actionable?"),
             ("Values and perspectives", "How are Nature for Nature, Nature as Culture and Nature for Society represented?"),
             ("Participation and assumptions", "Who should shape the vision, and which desires, assumptions, beliefs or paradigms must be explicit?"),
+        ],
+    },
+    "policy-objective-vision": {
+        "title": "Policy-objective vision canvas",
+        "module_id": "future-pathways",
+        "topic_id": "vision-from-policy-objectives",
+        "duration": "30–45 min",
+        "format": "Policy-objective mapping canvas",
+        "description": (
+            "Use existing, negotiated EU policy targets as a shared positive vision for a nature-positive land system."
+        ),
+        "outcome": "A coherent future state built from identified and categorised policy objectives.",
+        "steps": [
+            "Identify the regional, national and EU policy frameworks relevant to the land-use challenge.",
+            "Select and categorise the long-term objectives that describe the future to be achieved.",
+            "Bring the objectives together as a coherent nature-positive vision before defining pathways or actions.",
+        ],
+        "prompts": [
+            ("Policy landscape", "Which frameworks for sustainable transformation and transition shape this land-use challenge?"),
+            ("Relevant objectives", "Which negotiated EU policy objectives and time horizons are relevant to the land system?"),
+            ("Categories and relationships", "How can the objectives be categorised, and where do they reinforce or depend on one another?"),
+            ("Shared future state", "What nature-positive future do these objectives describe when considered together?"),
+            ("Boundary with pathways", "Which statements describe the future destination, and which measures or actions should be developed later as pathways?"),
         ],
     },
     "nff-pathway-builder": {
