@@ -1421,18 +1421,30 @@ def render_module_modes(user, module_id: str):
     topics = learning_topics(module)
     understand = [t for t in topics if t.get("level") == "Understand"]
     apply_steps = [t for t in topics if t.get("level") == "Apply"]
+    convince_available = bool(module.get("convince"))
     cols = st.columns(3)
     cards = [
         ("understand", "01", "Understand", "Read the concepts in short, easy-to-scan steps and check your understanding.", f"{len(understand)} learning step{'s' if len(understand) != 1 else ''}"),
         ("apply", "02", "Apply", "Move from concepts to methods, decisions and reflections in your own context.", f"{len(apply_steps)} practical step{'s' if len(apply_steps) != 1 else ''}"),
-        ("convince", "03", "Convince", "Browse examples, arguments, policy briefs and evidence you can reuse with other people.", "Resource hub · not graded"),
+        (
+            "convince",
+            "03",
+            "Convince",
+            "Browse examples, arguments, policy briefs and evidence you can reuse with other people."
+            if convince_available
+            else "This part of the source material is still under construction.",
+            "Resource hub · not graded" if convince_available else "Under construction",
+        ),
     ]
     for col, (cls, num, title, text, note) in zip(cols, cards):
         with col:
             st.markdown(f"<div class='m-mode-card {cls}'><div class='m-mode-num'>{num}</div><h3>{title}</h3><p>{text}</p><span class='m-mode-note'>{note}</span></div>", unsafe_allow_html=True)
             if cls == "convince":
-                if st.button("Open evidence & resources →", key=f"mode-convince-{module_id}", use_container_width=True, type="secondary"):
-                    navigate("convince", module_id)
+                if convince_available:
+                    if st.button("Open evidence & resources →", key=f"mode-convince-{module_id}", use_container_width=True, type="secondary"):
+                        navigate("convince", module_id)
+                else:
+                    st.caption("Available after the source section is completed.")
             else:
                 candidates = understand if cls == "understand" else apply_steps
                 if candidates and st.button(f"Go to {title.lower()} →", key=f"mode-{cls}-{module_id}", use_container_width=True):
@@ -1767,7 +1779,7 @@ def render_quiz(user, module_id: str, topic):
 
         if questions:
             st.markdown(
-                "<div class='m-self-check-intro'><h4>Reflect before you continue</h4><p>Select the prompts you have considered. You can capture anything useful in the reflection box below.</p></div>",
+                "<div class='m-self-check-intro'><h4>Review before you continue</h4><p>Select the prompts you have considered. Revisit your reflection above if the check reveals something useful.</p></div>",
                 unsafe_allow_html=True,
             )
             for idx, question in enumerate(questions, start=1):
@@ -1827,7 +1839,6 @@ def page_topic(user):
         )
 
     render_learning_extras(module_id, topic, include_practice=not summary_embedded)
-    render_quiz(user, module_id, topic)
 
     st.markdown(
         f"<div class='m-reflection'><div class='label'>Apply it to your context</div><p>{escape(topic['prompt'])}</p></div>",
@@ -1842,6 +1853,10 @@ def page_topic(user):
             height=130,
         )
         st.caption("Saved reflections are collected in your Profile under My reflection notebook.")
+
+    # Keep the quick check at the bottom of the learning content, after the
+    # reflection question, so learners first connect the idea to their context.
+    render_quiz(user, module_id, topic)
 
     with st.container(key="reflection_actions"):
         action1, action2 = st.columns([1, 1], gap="medium")
