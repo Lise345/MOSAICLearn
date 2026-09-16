@@ -535,19 +535,302 @@ MODULES = {
         ],
     },
     "future-pathways": {
-        "title": "Exploring Future Pathways",
+        "title": "Future Pathways towards Sustainable Land-Use Futures",
         "short_title": "Future Pathways",
         "track": "Empowerment",
         "track_icon": "↝",
         "description": (
-            "A future module for exploring possible pathways and returning to the Policy Lab with sharper questions and options for action."
+            "Move from a desirable nature-positive land-use future to practical pathways and regionally relevant action."
         ),
-        "estimated_minutes": 40,
-        "status": "Coming soon",
-        "eyebrow": "From insight to action",
-        "source_note": "Catalogue placeholder only in this prototype.",
-        "learning_outcomes": [],
-        "topics": [],
+        "estimated_minutes": 57,
+        "status": "Available",
+        "eyebrow": "From vision to pathways and regional relevance",
+        "source_note": (
+            "This learning journey draws primarily on MOSAIC Deliverable D4.1: "
+            "A comprehensive set of normative (policy) and exploratory scenarios for the case studies."
+        ),
+        "learning_outcomes": [
+            "Understand what a nature-positive vision is.",
+            "Use the Nature Futures Framework to work with different ways of valuing nature.",
+            "Develop pathways from a shared vision towards transformations and action.",
+            "Contextualise pathways into place-specific priorities and policy options.",
+        ],
+        "topics": [
+            {
+                "id": "nature-positive-futures",
+                "title": "Why start with a nature-positive future?",
+                "level": "Understand",
+                "minutes": 9,
+                "summary": "Learn why a normative future provides direction for systemic land-use change.",
+                "body": (
+                    "A nature-positive future begins with what people want to create, then connects that shared destination "
+                    "to pathways and regionally relevant action."
+                ),
+                "theory_cards": [
+                    card(
+                        "Environmental challenges require systemic change",
+                        "Biodiversity loss, climate change, declining ecosystem health and increasing pressure on natural resources cannot be solved through isolated measures or incremental improvements alone. They require long-term, systemic change in the way people interact with nature.",
+                        "Why futures",
+                    ),
+                    card(
+                        "Begin with a desirable future",
+                        "Rather than asking what is likely to happen, a normative approach starts from the question: what kind of future do we want to create? It starts from a shared ambition and asks which transformations are needed to reach it.",
+                        "Normative approach",
+                    ),
+                    card(
+                        "A vision and a pathway do different jobs",
+                        "A vision describes what a desirable future looks like and provides a shared destination. A pathway describes how that future can be reached through transformations, policies, governance changes, innovations and behavioural shifts over time.",
+                        "Important distinction",
+                    ),
+                    card(
+                        "The work moves through three connected steps",
+                        "First create a shared vision of a desirable, nature-positive future. Then identify pathways that describe how it can be achieved, and finally contextualise those pathways to define concrete action for a specific place.",
+                        "Learning sequence",
+                    ),
+                ],
+                "takeaway": "A vision provides direction; pathways provide possible routes; contextualisation turns those routes into regionally relevant action.",
+                "prompt": "Which future state would give direction to the land-use challenge you are working on, and why does it require more than incremental improvement?",
+                "quiz": {
+                    "question": "Which statement best describes the normative approach used in this module?",
+                    "options": [
+                        "It predicts the single future that is most likely to occur.",
+                        "It begins with a desirable future and asks what transformations could lead towards it.",
+                        "It focuses only on actions that fit within present-day constraints.",
+                    ],
+                    "answer": 1,
+                    "explanation": "The normative approach begins with a shared ambition and works backwards towards the transformations and pathways needed to reach it.",
+                },
+                "self_check": [
+                    "I can explain the difference between a vision and a pathway.",
+                    "I can describe why a desirable future can strengthen agency and participation.",
+                ],
+            },
+            {
+                "id": "nature-futures-framework",
+                "title": "The Nature Futures Framework",
+                "level": "Understand",
+                "minutes": 9,
+                "summary": "Understand how three value perspectives create a plural space of desirable nature-positive futures.",
+                "body": (
+                    "The Nature Futures Framework is a flexible compass for developing desirable futures for people, nature and Mother Earth."
+                ),
+                "theory_cards": [
+                    card(
+                        "The framework is a compass, not one prescribed future",
+                        "Developed under IPBES, the Nature Futures Framework supports visions of desirable, nature-positive futures and the pathways needed to achieve them. It recognises that societies, cultures and stakeholders value nature in different ways.",
+                        "Purpose",
+                    ),
+                    card(
+                        "Nature for Nature",
+                        "This perspective emphasises nature's intrinsic value: the diversity of species, habitats, ecosystems and processes, and nature's ability to function autonomously.",
+                        "Value perspective",
+                    ),
+                    card(
+                        "Nature as Culture",
+                        "This perspective highlights relational values, where societies, cultures, traditions and faiths are intertwined with nature in shaping diverse biocultural landscapes.",
+                        "Value perspective",
+                    ),
+                    card(
+                        "Nature for Society",
+                        "This perspective highlights the utilitarian benefits and instrumental values that nature provides to people and societies.",
+                        "Value perspective",
+                    ),
+                    card(
+                        "The triangle represents mixtures of values",
+                        "Activities and future visions can sit at a corner or combine the three perspectives. The framework makes plurality visible without requiring every person or place to value nature in the same way.",
+                        "How to read it",
+                    ),
+                ],
+                "takeaway": "The Nature Futures Framework creates space for different human-nature relationships while keeping every future nature-positive.",
+                "practice_note": "Several MOSAIC Policy Labs used the Nature Futures Framework as reference perspectives for a nature-positive European land system.",
+                "prompt": "Which of the three value perspectives is most visible in your current policy or project, and which perspective receives less attention?",
+                "quiz": {
+                    "question": "What does a position between the corners of the Nature Futures Framework triangle represent?",
+                    "options": [
+                        "A future that does not value nature.",
+                        "A combination of Nature for Nature, Nature as Culture and Nature for Society perspectives.",
+                        "A ranking in which one perspective is objectively better than the others.",
+                    ],
+                    "answer": 1,
+                    "explanation": "The triangle represents different mixes of the three value perspectives rather than a ranking or a requirement to select one corner.",
+                },
+                "self_check": [
+                    "I can distinguish the three Nature Futures Framework perspectives.",
+                    "I understand why different value perspectives can lead to different pathways.",
+                ],
+            },
+            {
+                "id": "create-vision",
+                "title": "Create a shared vision",
+                "level": "Apply",
+                "minutes": 12,
+                "summary": "Define a desirable future state that is transformative, imaginable and connected to people's values.",
+                "body": (
+                    "A vision initiates a change trajectory by giving people an appealing and inspiring image of a more sustainable future."
+                ),
+                "theory_cards": [
+                    card(
+                        "Describe the future state before the route",
+                        "Create a narrative, image or other description of a desirable future state. Make the desires, assumptions, beliefs and paradigms underpinning that future explicit before deciding how to reach it.",
+                        "Step 1",
+                    ),
+                    card(
+                        "Choose a useful time horizon",
+                        "Set the vision far enough away to escape today's constraints and avoid incremental thinking, yet close enough to remain imaginable and actionable. A horizon around 2050 can balance transformational thinking with relevance for current policy, planning and action.",
+                        "Step 2",
+                    ),
+                    card(
+                        "Choose how the vision will be created",
+                        "Co-create the vision through a participatory visioning process, or use existing negotiated policy objectives as a shared vision developed in a real-world setting. In either route, clarify whose values and priorities are represented.",
+                        "Step 3",
+                    ),
+                    card(
+                        "Use the framework to keep nature and people central",
+                        "Use the three Nature Futures Framework perspectives to explore the desired ecological, social and economic characteristics of the future and to connect the vision to its underpinning value expressions.",
+                        "Step 4",
+                    ),
+                    card(
+                        "Build trust and motivation into the process",
+                        "Create early dialogue between researchers and policymakers to address different priorities and professional cultures. Align the work with the personal ambitions of core team members so that people see a clear connection between their goals and the shared mission.",
+                        "Take into account",
+                    ),
+                ],
+                "takeaway": "A useful vision is desirable, shared, explicit about its values, and far enough away to enable transformational thinking without losing relevance for action.",
+                "practice_note": "The European Policy Lab used existing, negotiated EU policy objectives as a shared vision and then identified and categorised objectives relevant to the land system.",
+                "prompt": "Write one or two sentences describing the desirable future state for your context. Which assumptions, values and voices need to be made visible?",
+                "tool": {
+                    "id": "nature-positive-vision",
+                    "name": "Nature-positive vision canvas",
+                    "description": "Define the future state, time horizon, value perspectives, participants and assumptions that shape your vision.",
+                },
+                "quiz": None,
+                "self_check": [
+                    "The vision is far enough away to move beyond today's constraints but remains imaginable.",
+                    "The process makes values, assumptions and represented voices explicit.",
+                    "The vision keeps nature and people at the centre.",
+                ],
+            },
+            {
+                "id": "create-pathways",
+                "title": "Develop pathways towards the vision",
+                "level": "Apply",
+                "minutes": 15,
+                "summary": "Translate the vision into several coherent sequences of transformations, actions and decisions.",
+                "body": (
+                    "Pathways move the process from a desirable destination to the transformations and actions that could make it possible."
+                ),
+                "theory_cards": [
+                    card(
+                        "Start from the vision and ask how to get there",
+                        "Describe concrete actions and measures that underpin future changes. Do not assume there is only one roadmap: several pathways can reveal different trajectories and trade-offs between actions and measures.",
+                        "Step 1",
+                    ),
+                    card(
+                        "Construct a pathway through each value lens",
+                        "Use Nature for Nature, Nature as Culture and Nature for Society to create distinct pathway narratives towards the same vision or policy objective. Each lens can reveal different land-management strategies and sets of transformations.",
+                        "Step 2",
+                    ),
+                    card(
+                        "Ask what must change",
+                        "For Nature for Nature, ask what transformations enable nature itself to flourish. For Nature for Society, ask what enables people to benefit from and contribute to nature. For Nature as Culture, ask what must change in relationships, responsibilities and identities connected to nature.",
+                        "Step 3",
+                    ),
+                    card(
+                        "Make the pathway specific enough to use",
+                        "Describe the transformations, policies, governance changes, innovations and behavioural shifts needed over time. Where relevant, specify temporal and spatial scales, land-use and land-cover types, and the actions that change indicators or biophysical properties.",
+                        "Step 4",
+                    ),
+                    card(
+                        "Review logic, consistency and suitability",
+                        "Check the pathway narratives for logic, consistency and alignment with the three perspectives. Expert pathway development requires understanding of policy objectives, systems thinking and land-use change dynamics, so it may be less suitable as a first exercise for general stakeholders.",
+                        "Take into account",
+                    ),
+                ],
+                "takeaway": "Multiple pathways connect the same future vision to different transformations and make value choices, alternatives and trade-offs visible.",
+                "practice_note": "MOSAIC researchers translated EU policy objectives into a nature-positive vision, developed pathway narratives through all three lenses in an expert workshop, clustered the narratives into broader pathways, and reviewed them for logic and consistency.",
+                "prompt": "Choose one vision or policy objective. What would need to change if each Nature Futures Framework lens were taken seriously?",
+                "tool": {
+                    "id": "nff-pathway-builder",
+                    "name": "NFF pathway builder",
+                    "description": "Develop three pathway narratives towards the same vision and compare their transformations, actions and trade-offs.",
+                },
+                "quiz": {
+                    "question": "Why create several pathways towards the same vision?",
+                    "options": [
+                        "To identify the one perspective that every stakeholder must accept.",
+                        "To visualise different trajectories and reveal transformations and trade-offs.",
+                        "To replace the future vision with a list of present-day problems.",
+                    ],
+                    "answer": 1,
+                    "explanation": "Several pathways make alternative trajectories, value choices, transformations and trade-offs visible while working towards the same future vision.",
+                },
+                "self_check": [
+                    "Each pathway is connected to the same future vision or policy objective.",
+                    "The narratives describe changes over time rather than isolated actions.",
+                    "The pathways are checked for logic, consistency and alignment with their value lens.",
+                ],
+            },
+            {
+                "id": "regional-relevance",
+                "title": "Make pathways regionally relevant",
+                "level": "Apply",
+                "minutes": 12,
+                "summary": "Work with stakeholders to retain, adapt or reconsider pathway elements for a specific place and implementation context.",
+                "body": (
+                    "Strategic pathways only become actionable when they are connected to regional priorities, opportunities and constraints."
+                ),
+                "theory_cards": [
+                    card(
+                        "Begin with the implementation context",
+                        "Ask which combination of pathways is most relevant to the people, place and implementation context involved. Consider landscapes, institutions, cultures, livelihoods, governance arrangements and practical constraints.",
+                        "Step 1",
+                    ),
+                    card(
+                        "Let stakeholders position their priorities",
+                        "Use the Nature Futures Framework triangle to show how strongly implementation priorities align with Nature for Nature, Nature as Culture, Nature for Society or a combination of the three.",
+                        "Step 2",
+                    ),
+                    card(
+                        "Treat the result as a conversation, not a vote",
+                        "A point between the corners represents a combination of value perspectives. Look for where priorities converge or differ instead of selecting one pathway and discarding the others.",
+                        "Step 3",
+                    ),
+                    card(
+                        "Retain, adapt or reconsider pathway elements",
+                        "Compare stakeholder priorities with the expert-developed pathways. Decide which elements remain relevant, which need adjustment for local conditions, and which should be reconsidered before defining concrete action, governance changes and investment.",
+                        "Step 4",
+                    ),
+                    card(
+                        "Check how place changes the route",
+                        "The same policy target can produce very different pathways in different regions. Make local ecological conditions, cultural traditions, policy responsibilities, costs, benefits and opportunities explicit before moving to implementation.",
+                        "Take into account",
+                    ),
+                ],
+                "takeaway": "Regional relevance comes from combining value perspectives and adapting strategic pathways to the people, place and practical conditions involved.",
+                "practice_note": "In Portugal, stakeholders connected EU objectives to local nurseries, watercourses, soils, traditional farming and suitable renewable-energy locations. In Denmark, the same afforestation target produced different priorities for biodiversity, recreation, groundwater protection and cost-effective climate mitigation.",
+                "prompt": "Which pathway elements would your stakeholders retain, adapt or reconsider, and which local conditions explain those choices?",
+                "tool": {
+                    "id": "regional-pathway-canvas",
+                    "name": "Regional pathway canvas",
+                    "description": "Compare stakeholder priorities, local conditions and pathway elements before defining place-specific action.",
+                },
+                "quiz": {
+                    "question": "What is the purpose of placing stakeholder priorities in the Nature Futures Framework triangle?",
+                    "options": [
+                        "To vote for one pathway and discard the others.",
+                        "To understand combinations of values, convergence and differences that should shape adaptation.",
+                        "To prove that every region should implement the same EU-level pathway.",
+                    ],
+                    "answer": 1,
+                    "explanation": "The distribution helps a group understand combined value perspectives, convergence and differences, and what should be retained, adapted or reconsidered.",
+                },
+                "self_check": [
+                    "Relevant landscapes, institutions, cultures, livelihoods and constraints are visible.",
+                    "Stakeholder differences are used to improve pathways rather than reduced to a single vote.",
+                    "The final actions remain connected to the long-term nature-positive vision.",
+                ],
+            },
+        ],
     },
 }
 
@@ -729,6 +1012,9 @@ MODULES["drivers"]["convince"] = {
 # "causal-loop-diagram": ["causal-loop-diagram.docx", "causal-loop-diagram.pdf"],
 TOOL_DOWNLOAD_FILES = {
     "causal-loop-diagram": [],
+    "nature-positive-vision": [],
+    "nff-pathway-builder": [],
+    "regional-pathway-canvas": [],
     "finding-your-focus": [],
     "define-core-group": [],
     "policy-mapping": [],
@@ -756,6 +1042,73 @@ TOOL_DEFINITIONS = {
             "Connect variables, assign polarity, and look for feedback loops or leverage points.",
         ],
         "kind": "cld",
+    },
+    "nature-positive-vision": {
+        "title": "Nature-positive vision canvas",
+        "module_id": "future-pathways",
+        "topic_id": "create-vision",
+        "duration": "30–45 min",
+        "format": "Vision canvas",
+        "description": (
+            "Describe a desirable future state, make its values and assumptions explicit, and choose a process for creating shared ownership."
+        ),
+        "outcome": "A concise nature-positive vision with a time horizon, represented perspectives and clear assumptions.",
+        "steps": [
+            "Describe the desirable ecological, social and economic characteristics of the future state.",
+            "Use the three Nature Futures Framework perspectives to make value choices and missing voices visible.",
+            "Check that the horizon enables transformational thinking while remaining relevant for action.",
+        ],
+        "prompts": [
+            ("Future state", "What does the desirable nature-positive future look like?"),
+            ("Time horizon", "Which horizon is far enough to escape today's constraints but close enough to remain actionable?"),
+            ("Values and perspectives", "How are Nature for Nature, Nature as Culture and Nature for Society represented?"),
+            ("Participation and assumptions", "Who should shape the vision, and which desires, assumptions, beliefs or paradigms must be explicit?"),
+        ],
+    },
+    "nff-pathway-builder": {
+        "title": "NFF pathway builder",
+        "module_id": "future-pathways",
+        "topic_id": "create-pathways",
+        "duration": "45–60 min",
+        "format": "Pathway comparison",
+        "description": (
+            "Create several routes towards the same future vision by asking what must change through each Nature Futures Framework lens."
+        ),
+        "outcome": "Three comparable pathway narratives showing transformations, actions, timing and trade-offs.",
+        "steps": [
+            "Start with one shared vision or policy objective.",
+            "Develop a pathway through each of the three Nature Futures Framework perspectives.",
+            "Review the narratives for logic, consistency, trade-offs and alignment with their perspective.",
+        ],
+        "prompts": [
+            ("Shared destination", "Which future vision or policy objective should every pathway work towards?"),
+            ("Nature for Nature", "What transformations are needed for nature itself to flourish?"),
+            ("Nature as Culture", "What must change in relationships, responsibilities and identities connected to nature?"),
+            ("Nature for Society", "What transformations enable people to benefit from and contribute to nature?"),
+            ("Sequence and trade-offs", "Which policies, governance changes, innovations and behavioural shifts are needed over time, and what trade-offs appear?"),
+        ],
+    },
+    "regional-pathway-canvas": {
+        "title": "Regional pathway canvas",
+        "module_id": "future-pathways",
+        "topic_id": "regional-relevance",
+        "duration": "30–45 min",
+        "format": "Contextualisation canvas",
+        "description": (
+            "Connect strategic pathways to stakeholder priorities, regional conditions and an actionable implementation context."
+        ),
+        "outcome": "A place-specific pathway showing what to retain, adapt or reconsider and why.",
+        "steps": [
+            "Map the people, place and implementation conditions that shape what is possible.",
+            "Position stakeholder priorities in or between the three Nature Futures Framework perspectives.",
+            "Use convergence and differences to retain, adapt or reconsider pathway elements.",
+        ],
+        "prompts": [
+            ("Regional context", "Which landscapes, institutions, cultures, livelihoods, governance arrangements and constraints matter?"),
+            ("Stakeholder priorities", "Where do priorities sit in the Nature Futures Framework triangle, and where do they converge or differ?"),
+            ("Adaptation", "Which pathway elements should be retained, adapted or reconsidered for this place?"),
+            ("Action", "Which concrete actions, governance changes and investments follow from the adapted pathway?"),
+        ],
     },
     "finding-your-focus": {
         "title": "Finding Your Focus",
