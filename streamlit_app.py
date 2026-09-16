@@ -92,6 +92,67 @@ def _initialise_database_once() -> bool:
 
 _initialise_database_once()
 
+
+# Short-lived read caches keep navigation responsive when Streamlit reruns the
+# script. Every write below clears its related cache immediately, so learners
+# still see their own updates without waiting for the TTL.
+@st.cache_data(ttl=30, show_spinner=False)
+def _cached_user_record(
+    user_id: str,
+    email: str,
+    name: str,
+    auth_issuer: str,
+    auth_subject: str,
+) -> dict:
+    return ensure_user(
+        user_id,
+        email,
+        name,
+        auth_issuer=auth_issuer,
+        auth_subject=auth_subject,
+    )
+
+
+@st.cache_data(ttl=30, show_spinner=False)
+def _cached_progress(user_id: str, module_id: str) -> dict[str, dict]:
+    return get_progress(user_id, module_id)
+
+
+@st.cache_data(ttl=30, show_spinner=False)
+def _cached_quiz_results(user_id: str, module_id: str) -> dict[str, dict]:
+    return get_quiz_results(user_id, module_id)
+
+
+@st.cache_data(ttl=30, show_spinner=False)
+def _cached_community_posts(limit: int = 30) -> list[dict]:
+    return list_community_posts(limit)
+
+
+@st.cache_data(ttl=30, show_spinner=False)
+def _cached_users() -> list[dict]:
+    return list_users()
+
+
+def _save_progress(*args, **kwargs) -> None:
+    save_topic_progress(*args, **kwargs)
+    _cached_progress.clear()
+
+
+def _save_quiz(*args, **kwargs) -> None:
+    save_quiz_result(*args, **kwargs)
+    _cached_quiz_results.clear()
+
+
+def _save_profile(*args, **kwargs) -> None:
+    update_user_profile(*args, **kwargs)
+    _cached_user_record.clear()
+
+
+def _save_account_role(user_id: str, account_role: str) -> None:
+    set_account_role(user_id, account_role)
+    _cached_user_record.clear()
+    _cached_users.clear()
+
 st.markdown(
     """
 <style>
@@ -804,16 +865,16 @@ def get_current_user():
 
 def ensure_profile(user: dict) -> dict:
     """Create the account record and show one-time learner onboarding."""
-    stored = ensure_user(
+    stored = _cached_user_record(
         user["user_id"],
         user.get("email", ""),
         user.get("name", "Learner"),
-        auth_issuer=user.get("auth_issuer", ""),
-        auth_subject=user.get("auth_subject", ""),
+        user.get("auth_issuer", ""),
+        user.get("auth_subject", ""),
     )
     bootstrap_admin = bool(user.get("demo")) or user.get("email", "").strip().lower() in _configured_admin_emails()
     if bootstrap_admin and stored.get("account_role") != "administrator":
-        set_account_role(user["user_id"], "administrator")
+        _save_account_role(user["user_id"], "administrator")
         stored = get_user(user["user_id"]) or stored
     user["account_role"] = stored.get("account_role") or "learner"
     if stored.get("profile_complete"):
@@ -854,7 +915,7 @@ def ensure_profile(user: dict) -> dict:
         st.caption("Your private reflections are not shown in Community unless you explicitly publish a separate community post.")
         submitted = st.form_submit_button("Create my profile", type="primary", use_container_width=True)
     if submitted:
-        update_user_profile(
+        _save_profile(
             user["user_id"],
             role=role,
             organisation=organisation,
@@ -871,7 +932,7 @@ def module_completion(user_id: str, module_id: str):
     topics = learning_topics(module)
     if not topics:
         return 0.0, 0, 0
-    progress = get_progress(user_id, module_id)
+    progress = _cached_progress(user_id, module_id)
     completed = sum(1 for topic in topics if progress.get(topic["id"], {}).get("completed"))
     return completed / len(topics), completed, len(topics)
 
@@ -879,7 +940,7 @@ def module_completion(user_id: str, module_id: str):
 def first_incomplete_topic(user_id: str, module_id: str) -> str | None:
     module = MODULES[module_id]
     topics = learning_topics(module)
-    progress = get_progress(user_id, module_id)
+    progress = _cached_progress(user_id, module_id)
     for topic in topics:
         if not progress.get(topic["id"], {}).get("completed"):
             return topic["id"]
@@ -960,7 +1021,7 @@ def render_sidebar(user):
 
             if route == "topic":
                 topic_id = st.session_state.get("topic_id")
-                progress = get_progress(user["user_id"], module_id)
+                progress = _cached_progress(user["user_id"], module_id)
                 for idx, topic in enumerate(learning_topics(module), start=1):
                     marker = "✓" if progress.get(topic["id"], {}).get("completed") else str(idx)
                     prefix = "→" if topic["id"] == topic_id else marker
@@ -1295,7 +1356,7 @@ def page_learning(user):
 
 def render_module_path(user, module_id: str):
     module = MODULES[module_id]
-    progress = get_progress(user["user_id"], module_id)
+    progress = _cached_progress(user["user_id"], module_id)
     all_topics = learning_topics(module)
 
     for level in ["Understand", "Apply"]:
@@ -1484,8 +1545,7 @@ def page_module(user):
         if next_topic_id and st.button("Continue learning →", key=f"module-continue-{module_id}", type="primary", use_container_width=True):
             navigate("topic", module_id, next_topic_id)
 
-    stored = get_user(user["user_id"]) or user
-    role_name = stored.get("role") or "Research"
+    role_name = user.get("role") or "Research"
     if role_name in ROLE_CALLOUTS:
         st.markdown(f"<div class='m-role-callout'><strong>For your role</strong><br>{escape(ROLE_CALLOUTS[role_name])}</div>", unsafe_allow_html=True)
 
@@ -1671,7 +1731,7 @@ def render_quiz(user, module_id: str, topic):
             unsafe_allow_html=True,
         )
         if quiz:
-            previous = get_quiz_results(user["user_id"], module_id).get(topic["id"])
+            previous = _cached_quiz_results(user["user_id"], module_id).get(topic["id"])
             prior_index = int(previous["selected_index"]) if previous else None
             choice = st.radio(
                 quiz["question"],
@@ -1686,13 +1746,13 @@ def render_quiz(user, module_id: str, topic):
             ):
                 selected = quiz["options"].index(choice)
                 correct = selected == quiz["answer"]
-                save_quiz_result(user["user_id"], module_id, topic["id"], selected, correct)
+                _save_quiz(user["user_id"], module_id, topic["id"], selected, correct)
                 if correct:
                     st.success("Correct. " + quiz["explanation"])
                 else:
                     st.error("Not quite. " + quiz["explanation"])
 
-            previous = get_quiz_results(user["user_id"], module_id).get(topic["id"])
+            previous = _cached_quiz_results(user["user_id"], module_id).get(topic["id"])
             if previous:
                 if previous["is_correct"]:
                     st.markdown(
@@ -1734,7 +1794,7 @@ def page_topic(user):
     index = next(i for i, t in enumerate(topics) if t["id"] == topic["id"])
     previous_topic = topics[index - 1] if index > 0 else None
     next_topic = topics[index + 1] if index < len(topics) - 1 else None
-    saved = get_progress(user["user_id"], module_id).get(topic["id"], {})
+    saved = _cached_progress(user["user_id"], module_id).get(topic["id"], {})
     ratio, done, total = module_completion(user["user_id"], module_id)
 
     back_col, prog_col = st.columns([1, 2.5], vertical_alignment="center")
@@ -1787,7 +1847,7 @@ def page_topic(user):
         action1, action2 = st.columns([1, 1], gap="medium")
         with action1:
             if st.button("Save reflection", key=f"save-{module_id}-{topic['id']}", use_container_width=True):
-                save_topic_progress(
+                _save_progress(
                     user["user_id"],
                     module_id,
                     topic["id"],
@@ -1798,7 +1858,7 @@ def page_topic(user):
             if not saved.get("completed"):
                 complete_label = "Complete & continue →" if next_topic else "Complete learning path ✓"
                 if st.button(complete_label, key=f"complete-{module_id}-{topic['id']}", type="primary", use_container_width=True):
-                    save_topic_progress(
+                    _save_progress(
                         user["user_id"],
                         module_id,
                         topic["id"],
@@ -1812,7 +1872,7 @@ def page_topic(user):
             else:
                 st.success("✓ Lesson completed")
                 if st.button("Mark incomplete", key=f"incomplete-{module_id}-{topic['id']}", use_container_width=True):
-                    save_topic_progress(user["user_id"], module_id, topic["id"], completed=False)
+                    _save_progress(user["user_id"], module_id, topic["id"], completed=False)
                     st.rerun()
 
     with st.container(key="lesson_footer"):
@@ -1922,8 +1982,8 @@ def page_results(user):
     )
     module = MODULES[module_id]
     ratio, done, total = module_completion(user["user_id"], module_id)
-    progress = get_progress(user["user_id"], module_id)
-    quizzes = get_quiz_results(user["user_id"], module_id)
+    progress = _cached_progress(user["user_id"], module_id)
+    quizzes = _cached_quiz_results(user["user_id"], module_id)
 
     quiz_count = sum(1 for t in learning_topics(module) if t.get("quiz"))
     quiz_correct = sum(1 for q in quizzes.values() if q["is_correct"])
@@ -1997,7 +2057,7 @@ def page_community(user):
 
     browse_tab, share_tab = st.tabs(["Browse reflections", "Create a post"])
     with browse_tab:
-        posts = list_community_posts(40)
+        posts = _cached_community_posts(40)
         if not posts:
             st.info("No reflections have been shared yet. Be the first to add one.")
         for post in posts:
@@ -2045,12 +2105,15 @@ def page_community(user):
                 st.error("Write something before publishing.")
             else:
                 create_community_post(user["user_id"], user["name"], cleaned, module_id, topic_id)
+                _cached_community_posts.clear()
                 st.success("Published to the MOSAIC learning community.")
                 st.session_state.pop("community_module", None)
 
 
 def page_profile(user):
-    stored = get_user(user["user_id"]) or user
+    # ensure_profile already loaded these fields; avoid another transatlantic
+    # round trip simply to render this page.
+    stored = user
     st.markdown("<div class='m-kicker'>Account</div>", unsafe_allow_html=True)
     st.title("My profile")
 
@@ -2090,7 +2153,7 @@ def page_profile(user):
         interests = st.multiselect("Learning interests", labels, default=current_interest_labels)
         save_profile = st.form_submit_button("Save profile", type="primary")
     if save_profile:
-        update_user_profile(
+        _save_profile(
             user["user_id"],
             role=role,
             organisation=organisation,
@@ -2108,7 +2171,7 @@ def page_profile(user):
     for module_id, module in MODULES.items():
         if module.get("status") != "Available":
             continue
-        module_progress = get_progress(user["user_id"], module_id)
+        module_progress = _cached_progress(user["user_id"], module_id)
         for topic in learning_topics(module):
             saved = module_progress.get(topic["id"], {})
             text = (saved.get("reflection") or "").strip()
@@ -2370,7 +2433,7 @@ def page_admin(user):
             "Only administrators can see this page, edit carousel drafts, publish content, or change account permissions. "
             "The profile field describing someone’s work is separate."
         )
-        users = list_users()
+        users = _cached_users()
         if not users:
             st.info("No user accounts have been created yet.")
         else:
@@ -2396,7 +2459,7 @@ def page_admin(user):
                 elif selected_user["user_id"] == user["user_id"] and selected_permission != "administrator":
                     st.error("You cannot remove your own administrator access while signed in.")
                 else:
-                    set_account_role(selected_user["user_id"], selected_permission)
+                    _save_account_role(selected_user["user_id"], selected_permission)
                     st.success("Account permission updated.")
 
     with status_tab:
