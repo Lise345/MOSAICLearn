@@ -247,7 +247,8 @@ html, body, [class*="css"] { font-family: Poppins, "Segoe UI", Arial, sans-serif
 [data-baseweb="tab"][aria-selected="true"] { color:var(--m-wine) !important; }
 [data-baseweb="tab-highlight"] { background-color:var(--m-wine) !important; }
 [data-testid="stSegmentedControl"] button[aria-pressed="true"] { background:var(--m-wine-10) !important; color:var(--m-wine) !important; border-color:var(--m-wine) !important; }
-[data-testid="stProgress"] [role="progressbar"] > div { background-color:var(--m-blue) !important; }
+[data-testid="stProgress"] [role="progressbar"] > div {background-color: var(--m-blue-10) !important;}
+[data-testid="stProgress"] [role="progressbar"] > div > div {background-color: var(--m-blue) !important;}
 [data-baseweb="tab-list"] { gap:.25rem; }
 [data-baseweb="tab"] { font-family:inherit; font-weight:600; }
 
