@@ -1,4 +1,5 @@
 streamlit[auth]>=1.61,<2
 psycopg[binary]>=3.2,<4
+psycopg-pool>=3.2,<4
 streamlit-quill>=0.0.3
 bleach>=6.2,<7
