@@ -766,8 +766,41 @@ def _provider_label(provider: str) -> str:
     return labels.get(provider.lower(), provider.replace("-", " ").title())
 
 
-def get_current_user():
-    """Authenticate with Streamlit OIDC, with a local-only demo fallback.
+def _render_sign_in_prompt():
+    """Explain the shared Google sign-in/registration flow and start OIDC."""
+    st.markdown(
+        """
+        <div class="m-module-hero learning">
+            <div class="m-kicker">MOSAIC Learn</div>
+            <h1>Sign in to continue</h1>
+            <p>Sign in when you are ready to learn, join Community or save your progress. The same Google button works for new and returning learners.</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    providers = _auth_provider_names()
+    if providers:
+        cols = st.columns(min(len(providers), 2))
+        for idx, provider in enumerate(providers):
+            with cols[idx % len(cols)]:
+                if st.button(
+                    f"Continue with {_provider_label(provider)}",
+                    key=f"login-{provider}",
+                    type="primary",
+                    use_container_width=True,
+                ):
+                    st.login(provider)
+    else:
+        if st.button("Sign in to MOSAIC Learn", type="primary", use_container_width=True):
+            st.login()
+    st.caption(
+        "First-time users create a MOSAIC learner profile after Google returns them to the app. "
+        "Returning users resume the profile and progress already linked to their Google identity."
+    )
+
+
+def get_current_user(required: bool = True) -> dict | None:
+    """Return the current identity, prompting only when a protected page requires it.
 
     In production, configure [auth] in Streamlit Secrets. Identity is keyed from
     the OIDC issuer + subject, not from email, so a changed email does not create
@@ -775,32 +808,9 @@ def get_current_user():
     """
     if auth_is_configured():
         if not st.user.is_logged_in:
-            st.markdown(
-                """
-                <div class="m-module-hero learning">
-                    <div class="m-kicker">MOSAIC Learn</div>
-                    <h1>Your learning, saved across sessions</h1>
-                    <p>Sign in to keep your module progress, reflection notebook and community contributions connected to your profile.</p>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-            providers = _auth_provider_names()
-            if providers:
-                cols = st.columns(min(len(providers), 2))
-                for idx, provider in enumerate(providers):
-                    with cols[idx % len(cols)]:
-                        if st.button(
-                            f"Continue with {_provider_label(provider)}",
-                            key=f"login-{provider}",
-                            type="primary",
-                            use_container_width=True,
-                        ):
-                            st.login(provider)
-            else:
-                if st.button("Sign in to MOSAIC Learn", type="primary", use_container_width=True):
-                    st.login()
-            st.caption("MOSAIC Learn receives your basic identity details from the selected sign-in provider. Your learning profile is stored separately by MOSAIC Learn.")
+            if not required:
+                return None
+            _render_sign_in_prompt()
             st.stop()
 
         claims = st.user.to_dict() if hasattr(st.user, "to_dict") else dict(st.user)
@@ -821,6 +831,8 @@ def get_current_user():
     # Local development fallback. A hosted/PostgreSQL deployment must configure
     # OIDC; otherwise an unauthenticated visitor could obtain local admin access.
     if is_production_environment():
+        if not required:
+            return None
         st.error(
             "Google sign-in is not configured. Add the [auth] settings in your "
             "Streamlit Cloud Secrets before using the hosted app."
@@ -829,6 +841,8 @@ def get_current_user():
 
     st.session_state.setdefault("demo_user", None)
     if not st.session_state.demo_user:
+        if not required:
+            return None
         st.markdown(
             """
             <div class="m-module-hero learning">
@@ -959,14 +973,20 @@ def progress_bar_html(ratio: float) -> str:
     )
 
 
-def module_card_html(module_id: str, user_id: str) -> str:
+def module_card_html(module_id: str, user_id: str | None = None) -> str:
     module = MODULES[module_id]
-    ratio, done, total = module_completion(user_id, module_id)
+    topics = learning_topics(module)
+    if user_id:
+        ratio, done, total = module_completion(user_id, module_id)
+        progress = progress_bar_html(ratio) if total else ""
+        topic_meta = f"{done}/{total} learning steps" if total else "Module structure coming soon"
+    else:
+        total = len(topics)
+        progress = ""
+        topic_meta = f"{total} learning steps · Sign in to track progress" if total else "Module structure coming soon"
     track_class = module["track"].lower()
     status_class = "available" if module["status"] == "Available" else "soon"
     status_text = module["status"]
-    progress = progress_bar_html(ratio) if total else ""
-    topic_meta = f"{done}/{total} learning steps" if total else "Module structure coming soon"
     return f"""
     <div class="m-module-card">
         <div class="m-module-art {track_class}"></div>
@@ -982,23 +1002,31 @@ def module_card_html(module_id: str, user_id: str) -> str:
     """
 
 
-def render_sidebar(user):
+def render_sidebar(user: dict | None):
     route = st.session_state.get("route", "home")
     with st.sidebar:
         st.markdown(brand_home_html(sidebar=True), unsafe_allow_html=True)
-        st.caption(f"{user['name']} · {user.get('email', '')}")
+        if user:
+            st.caption(f"{user['name']} · {user.get('email', '')}")
+        else:
+            st.caption("Browse freely. Sign in when you start learning or join Community.")
         st.markdown("---")
 
         items = [
             ("home", "⌂  Home"),
-            ("learning", "◔  My learning"),
             ("catalogue", "▦  Modules"),
             ("tools", "◇  Tools"),
+            ("learning", "◔  My learning"),
             ("community", "✣  Community"),
-            ("results", "↗  Results"),
-            ("profile", "○  Profile"),
         ]
-        if is_administrator(user):
+        if user:
+            items.extend(
+                [
+                    ("results", "↗  Results"),
+                    ("profile", "○  Profile"),
+                ]
+            )
+        if user and is_administrator(user):
             items.append(("admin", "⚙  Admin"))
             st.caption("Administrator access")
         for key, label in items:
@@ -1006,7 +1034,7 @@ def render_sidebar(user):
             if st.button(label, key=f"nav-{key}", use_container_width=True, type=button_type):
                 navigate(key)
 
-        if route in {"module", "topic", "convince"}:
+        if user and route in {"module", "topic", "convince"}:
             st.markdown("---")
             module_id = st.session_state.get("module_id", "drivers")
             module = MODULES.get(module_id, MODULES["drivers"])
@@ -1030,7 +1058,7 @@ def render_sidebar(user):
                         navigate("topic", module_id, topic["id"])
 
 
-def page_home(user):
+def page_home(user: dict | None):
     st.markdown(
         f"""
         <div class="m-hero">
@@ -1070,20 +1098,33 @@ def page_home(user):
                 else:
                     st.button("Coming soon", key=f"home-track-{target_id}", disabled=True, use_container_width=True)
 
-    st.markdown("<div class='m-section-title'><h2>Continue learning</h2><p>Pick up the learning journey that is most useful right now.</p></div>", unsafe_allow_html=True)
+    learning_heading = "Continue learning" if user else "Explore the learning modules"
+    learning_intro = (
+        "Pick up the learning journey that is most useful right now."
+        if user
+        else "You can browse the catalogue and tools without an account. Sign in when you open a learning journey so your progress can be saved."
+    )
+    st.markdown(
+        f"<div class='m-section-title'><h2>{learning_heading}</h2><p>{learning_intro}</p></div>",
+        unsafe_allow_html=True,
+    )
     available = [(mid, m) for mid, m in MODULES.items() if m["status"] == "Available"]
     cols = st.columns(min(2, len(available)))
     for col, (module_id, module) in zip(cols, available):
         with col:
-            ratio, done, total = module_completion(user["user_id"], module_id)
-            st.markdown(module_card_html(module_id, user["user_id"]), unsafe_allow_html=True)
-            topic_id = first_incomplete_topic(user["user_id"], module_id)
-            label = "Continue →" if done else "Start module →"
-            if topic_id and st.button(label, key=f"home-continue-{module_id}", type="primary", use_container_width=True):
-                navigate("topic", module_id, topic_id)
+            user_id = user["user_id"] if user else None
+            st.markdown(module_card_html(module_id, user_id), unsafe_allow_html=True)
+            if user:
+                ratio, done, total = module_completion(user_id, module_id)
+                topic_id = first_incomplete_topic(user_id, module_id)
+                label = "Continue →" if done else "Start module →"
+                if topic_id and st.button(label, key=f"home-continue-{module_id}", type="primary", use_container_width=True):
+                    navigate("topic", module_id, topic_id)
+            elif st.button("Open learning journey →", key=f"home-continue-{module_id}", type="primary", use_container_width=True):
+                navigate("module", module_id)
 
 
-def page_catalogue(user):
+def page_catalogue(user: dict | None):
     st.markdown("<div class='m-kicker'>Catalogue</div>", unsafe_allow_html=True)
     st.title("MOSAIC Learn modules")
     st.caption("Follow the learning loop or open a module on its own when you need a specific method or explanation.")
@@ -1091,7 +1132,7 @@ def page_catalogue(user):
     cols = st.columns(3)
     for idx, (module_id, module) in enumerate(MODULES.items()):
         with cols[idx % 3]:
-            st.markdown(module_card_html(module_id, user["user_id"]), unsafe_allow_html=True)
+            st.markdown(module_card_html(module_id, user["user_id"] if user else None), unsafe_allow_html=True)
             if module["status"] == "Available":
                 if st.button("Open module →", key=f"open-{module_id}", type="primary", use_container_width=True):
                     navigate("module", module_id)
@@ -2515,10 +2556,6 @@ if share_token:
     page_public_result(str(share_token))
     st.stop()
 
-apply_published_carousel_overrides()
-user = get_current_user()
-user = ensure_profile(user)
-
 # Route state is intentionally independent from the sidebar. This fixes the
 # previous "open module -> home -> open module" rerun loop.
 st.session_state.setdefault("route", "home")
@@ -2535,10 +2572,25 @@ st.session_state.pop("goto", None)
 st.session_state.pop("selected_module", None)
 st.session_state.pop("selected_topic", None)
 
+apply_published_carousel_overrides()
+route = st.session_state.route
+protected_routes = {
+    "learning",
+    "community",
+    "module",
+    "topic",
+    "convince",
+    "results",
+    "profile",
+    "admin",
+}
+user = get_current_user(required=route in protected_routes)
+if user:
+    user = ensure_profile(user)
+
 render_sidebar(user)
 render_brandbar()
 
-route = st.session_state.route
 if route == "home":
     page_home(user)
 elif route == "learning":
