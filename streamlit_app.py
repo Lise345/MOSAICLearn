@@ -1148,7 +1148,7 @@ def module_card_html(module_id: str, user_id: str | None = None) -> str:
     else:
         total = len(topics)
         progress = ""
-        topic_meta = f"{total} learning steps · Sign in to track progress" if total else "Module structure coming soon"
+        topic_meta = f"{total} learning steps" if total else "Module structure coming soon"
     track_class = module["track"].lower()
     status_class = "available" if module["status"] == "Available" else "soon"
     status_text = module["status"]
@@ -1160,8 +1160,7 @@ def module_card_html(module_id: str, user_id: str | None = None) -> str:
             <div class="m-kicker" style="margin-top:.65rem">{escape(module['track'])}</div>
             <h3>{escape(module['short_title'])}</h3>
             <p>{escape(module['description'])}</p>
-            {progress}
-            <div class="m-module-meta"><span>{escape(topic_meta)}</span><span>•</span><span>{module['estimated_minutes']} min</span></div>
+            {progress}<div class="m-module-meta"><span>{escape(topic_meta)}</span><span>•</span><span>{module['estimated_minutes']} min</span></div>
         </div>
     </div>
     """
