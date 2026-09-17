@@ -1249,7 +1249,7 @@ def page_catalogue(user: dict | None):
         open_col, reset_col = st.columns([1, 1])
         with open_col:
             if st.button(
-                "Open recommended module →",
+                "Open module →",
                 key="open-recommended-module",
                 type="primary",
                 use_container_width=True,
