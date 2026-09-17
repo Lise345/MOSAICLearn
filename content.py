@@ -463,10 +463,10 @@ MODULES = {
             },
             {
                 "id": "actors-and-place",
-                "title": "Which drivers matter for whom?",
+                "title": "What types of drivers exist?",
                 "level": "Understand",
                 "minutes": 7,
-                "summary": "Shift from a generic list of drivers to an actor- and place-specific diagnosis.",
+                "summary": "A summary of different types of drivers and examples of each.",
                 "body": (
                     "The same incentive or regulation can be experienced differently by farmers, landowners, "
                     "municipalities, developers, conservation actors, and local communities."
