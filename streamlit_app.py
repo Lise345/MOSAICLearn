@@ -5,6 +5,7 @@ import copy
 import hashlib
 import io
 import zipfile
+from uuid import uuid4
 from pathlib import Path
 from html import escape
 from urllib.parse import quote
@@ -660,12 +661,29 @@ def plain_text_as_html(value: str | None) -> str:
     return f"<p>{text}</p>" if text else ""
 
 
+def carousel_card_editor_id(card_item: dict, position: int) -> str:
+    """Return a stable widget identity that follows an idea when it is reordered."""
+    existing = str(card_item.get("editor_id") or "").strip()
+    if existing:
+        return existing
+    seed = "|".join(
+        [
+            str(position),
+            str(card_item.get("label", "")),
+            str(card_item.get("title", "")),
+            str(card_item.get("body_html") or card_item.get("text_html") or card_item.get("text", "")),
+        ]
+    )
+    return hashlib.sha256(seed.encode("utf-8")).hexdigest()[:16]
+
+
 def default_carousel_payload(topic: dict) -> dict:
     """Convert content.py values into the editor's portable JSON structure."""
     cards = []
-    for card_item in topic.get("theory_cards") or []:
+    for card_index, card_item in enumerate(topic.get("theory_cards") or []):
         cards.append(
             {
+                "editor_id": carousel_card_editor_id(card_item, card_index),
                 "label": str(card_item.get("label", "Core idea")),
                 "title": str(card_item.get("title", "")),
                 "body_html": sanitize_rich_text(
@@ -693,7 +711,9 @@ def normalize_carousel_payload(payload: dict, fallback_topic: dict) -> dict:
     fallback = default_carousel_payload(fallback_topic)
     source_cards = payload.get("cards") if isinstance(payload, dict) else None
     cards = []
-    for card_item in source_cards if isinstance(source_cards, list) else fallback["cards"]:
+    for card_index, card_item in enumerate(
+        source_cards if isinstance(source_cards, list) else fallback["cards"]
+    ):
         if not isinstance(card_item, dict):
             continue
         title = str(card_item.get("title", "")).strip()
@@ -701,6 +721,7 @@ def normalize_carousel_payload(payload: dict, fallback_topic: dict) -> dict:
             continue
         cards.append(
             {
+                "editor_id": carousel_card_editor_id(card_item, card_index),
                 "label": str(card_item.get("label", "Core idea")).strip() or "Core idea",
                 "title": title,
                 "body_html": sanitize_rich_text(card_item.get("body_html", "")),
@@ -2870,16 +2891,37 @@ def page_admin(user):
             unsafe_allow_html=True,
         )
 
-        block_options = list(range(len(payload["cards"]))) + ["synthesis"]
+        screen_key = f"admin-carousel-screen-{module_id}-{topic_id}"
+        pending_screen_key = f"{screen_key}-pending"
+        reset_editor_key = f"admin-editor-reset-{module_id}-{topic_id}"
+        if st.session_state.pop(reset_editor_key, False):
+            editor_prefixes = tuple(
+                f"{prefix}-{module_id}-{topic_id}-"
+                for prefix in ("admin-label", "admin-title", "admin-body", "admin-position")
+            )
+            for state_key in list(st.session_state):
+                if state_key == screen_key or state_key.startswith(editor_prefixes):
+                    st.session_state.pop(state_key, None)
+
+        block_options = [card["editor_id"] for card in payload["cards"]] + ["synthesis"]
+        pending_screen = st.session_state.pop(pending_screen_key, None)
+        if pending_screen in block_options:
+            st.session_state[screen_key] = pending_screen
+        if st.session_state.get(screen_key) not in block_options:
+            st.session_state[screen_key] = block_options[0]
         selected_block = st.selectbox(
             "Carousel screen",
             block_options,
             format_func=lambda value: (
                 "Synthesis · Key idea & MOSAIC practice"
                 if value == "synthesis"
-                else f"Idea {value + 1} · {payload['cards'][value]['title']}"
+                else next(
+                    f"Idea {index + 1} · {card['title']}"
+                    for index, card in enumerate(payload["cards"])
+                    if card["editor_id"] == value
+                )
             ),
-            key=f"admin-carousel-screen-{module_id}-{topic_id}-{len(payload['cards'])}",
+            key=screen_key,
         )
 
         if selected_block == "synthesis":
@@ -2913,7 +2955,12 @@ def page_admin(user):
             payload["practice_image"] = practice_image.strip()
             payload["practice_image_alt"] = practice_image_alt.strip()
         else:
-            card_index = int(selected_block)
+            card_id = str(selected_block)
+            card_index = next(
+                index
+                for index, card in enumerate(payload["cards"])
+                if card["editor_id"] == card_id
+            )
             current_card = payload["cards"][card_index]
             st.markdown(f"### Edit idea {card_index + 1}")
             heading_a, heading_b = st.columns([1, 2])
@@ -2921,52 +2968,78 @@ def page_admin(user):
                 label = st.text_input(
                     "Small label",
                     value=current_card.get("label", "Core idea"),
-                    key=f"admin-label-{module_id}-{topic_id}-{card_index}",
+                    key=f"admin-label-{module_id}-{topic_id}-{card_id}",
                 )
             with heading_b:
                 title = st.text_input(
                     "Title",
                     value=current_card.get("title", ""),
-                    key=f"admin-title-{module_id}-{topic_id}-{card_index}",
+                    key=f"admin-title-{module_id}-{topic_id}-{card_id}",
                 )
             body_html = _rich_text_editor(
                 "Body (HTML)",
                 current_card.get("body_html", ""),
-                key=f"admin-body-{module_id}-{topic_id}-{card_index}",
+                key=f"admin-body-{module_id}-{topic_id}-{card_id}",
             )
             payload["cards"][card_index] = {
+                "editor_id": card_id,
                 "label": label.strip() or "Core idea",
                 "title": title.strip(),
                 "body_html": body_html,
             }
 
-            move_left, move_right, add_col, remove_col = st.columns(4)
-            with move_left:
-                if st.button("← Move earlier", disabled=card_index == 0, use_container_width=True):
-                    payload["cards"][card_index - 1], payload["cards"][card_index] = (
-                        payload["cards"][card_index], payload["cards"][card_index - 1]
-                    )
-                    st.session_state[working_key] = payload
-                    st.rerun()
-            with move_right:
-                if st.button("Move later →", disabled=card_index >= len(payload["cards"]) - 1, use_container_width=True):
-                    payload["cards"][card_index + 1], payload["cards"][card_index] = (
-                        payload["cards"][card_index], payload["cards"][card_index + 1]
-                    )
+            position_col, move_col, add_col, remove_col = st.columns([1.6, 1, 1, 1])
+            with position_col:
+                target_position = st.selectbox(
+                    "Move to position",
+                    list(range(1, len(payload["cards"]) + 1)),
+                    index=card_index,
+                    key=f"admin-position-{module_id}-{topic_id}-{card_id}",
+                )
+            with move_col:
+                st.markdown("<div style='height:1.72rem'></div>", unsafe_allow_html=True)
+                if st.button(
+                    "Move idea",
+                    key=f"admin-move-{module_id}-{topic_id}-{card_id}",
+                    disabled=target_position - 1 == card_index,
+                    use_container_width=True,
+                ):
+                    moved_card = payload["cards"].pop(card_index)
+                    payload["cards"].insert(target_position - 1, moved_card)
                     st.session_state[working_key] = payload
                     st.rerun()
             with add_col:
-                if st.button("＋ Add idea", use_container_width=True):
+                st.markdown("<div style='height:1.72rem'></div>", unsafe_allow_html=True)
+                if st.button(
+                    "＋ Add idea",
+                    key=f"admin-add-{module_id}-{topic_id}-{card_id}",
+                    use_container_width=True,
+                ):
+                    new_card_id = uuid4().hex[:16]
                     payload["cards"].insert(
                         card_index + 1,
-                        {"label": "Core idea", "title": "New idea", "body_html": "<p>Add the text here.</p>"},
+                        {
+                            "editor_id": new_card_id,
+                            "label": "Core idea",
+                            "title": "New idea",
+                            "body_html": "<p>Add the text here.</p>",
+                        },
                     )
                     st.session_state[working_key] = payload
+                    st.session_state[pending_screen_key] = new_card_id
                     st.rerun()
             with remove_col:
-                if st.button("Remove idea", disabled=len(payload["cards"]) <= 1, use_container_width=True):
+                st.markdown("<div style='height:1.72rem'></div>", unsafe_allow_html=True)
+                if st.button(
+                    "Remove idea",
+                    key=f"admin-remove-{module_id}-{topic_id}-{card_id}",
+                    disabled=len(payload["cards"]) <= 1,
+                    use_container_width=True,
+                ):
                     payload["cards"].pop(card_index)
                     st.session_state[working_key] = payload
+                    next_index = min(card_index, len(payload["cards"]) - 1)
+                    st.session_state[pending_screen_key] = payload["cards"][next_index]["editor_id"]
                     st.rerun()
 
         st.session_state[working_key] = payload
@@ -2994,7 +3067,10 @@ def page_admin(user):
             if st.button("Reload saved", use_container_width=True):
                 latest = get_carousel_content(module_id, topic_id) or {}
                 source = latest.get("draft") or latest.get("published") or default_carousel_payload(topic)
-                st.session_state[working_key] = normalize_carousel_payload(source, topic)
+                reloaded_payload = normalize_carousel_payload(source, topic)
+                st.session_state[working_key] = reloaded_payload
+                st.session_state[reset_editor_key] = True
+                st.session_state[pending_screen_key] = reloaded_payload["cards"][0]["editor_id"]
                 st.rerun()
         with open_col:
             if st.button("Open lesson →", use_container_width=True):
