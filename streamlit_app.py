@@ -62,6 +62,10 @@ TOOL_FILES_DIR = ASSETS_DIR / "tools"
 # shown the non-dismissible re-consent dialog before they can continue.
 PRIVACY_POLICY_VERSION = "2026-09-17"
 PRIVACY_POLICY_EFFECTIVE_DATE = "17 September 2026"
+# Change this value whenever init_db() gains a migration. It is passed into the
+# cached initializer so Streamlit Cloud cannot reuse a pre-migration cache entry
+# after a hot deployment.
+DATABASE_SCHEMA_VERSION = "2026-09-17-privacy-v1"
 
 # Prefer a dedicated square favicon, then the approved MOSAIC logo. The globe
 # is retained only as a last-resort fallback when neither image is installed.
@@ -91,12 +95,13 @@ except Exception:
 
 
 @st.cache_resource(show_spinner=False)
-def _initialise_database_once() -> bool:
+def _initialise_database_once(schema_version: str) -> bool:
+    # schema_version is intentionally part of the cache key.
     init_db()
     return True
 
 
-_initialise_database_once()
+_initialise_database_once(DATABASE_SCHEMA_VERSION)
 
 
 # Short-lived read caches keep navigation responsive when Streamlit reruns the
