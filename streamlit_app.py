@@ -33,6 +33,7 @@ from db import (
     create_community_post,
     create_share,
     database_backend,
+    delete_user_account,
     ensure_user,
     get_carousel_content,
     get_progress,
@@ -44,6 +45,7 @@ from db import (
     list_published_carousels,
     list_users,
     publish_carousel_content,
+    record_privacy_acceptance,
     save_quiz_result,
     save_carousel_draft,
     save_topic_progress,
@@ -56,6 +58,10 @@ ASSETS_DIR = APP_DIR / "assets"
 APPROVED_LOGO = ASSETS_DIR / "mosaic-logo.png"
 PAGE_ICON_FILE = ASSETS_DIR / "page-icon.png"
 TOOL_FILES_DIR = ASSETS_DIR / "tools"
+# Bump this value whenever the notice text changes. Existing accounts will be
+# shown the non-dismissible re-consent dialog before they can continue.
+PRIVACY_POLICY_VERSION = "2026-09-17"
+PRIVACY_POLICY_EFFECTIVE_DATE = "17 September 2026"
 
 # Prefer a dedicated square favicon, then the approved MOSAIC logo. The globe
 # is retained only as a last-resort fallback when neither image is installed.
@@ -151,6 +157,21 @@ def _save_profile(*args, **kwargs) -> None:
 def _save_account_role(user_id: str, account_role: str) -> None:
     set_account_role(user_id, account_role)
     _cached_user_record.clear()
+    _cached_users.clear()
+
+
+def _record_privacy_acceptance(user_id: str) -> None:
+    record_privacy_acceptance(user_id, PRIVACY_POLICY_VERSION)
+    _cached_user_record.clear()
+    _cached_users.clear()
+
+
+def _delete_account_data(user_id: str) -> None:
+    delete_user_account(user_id)
+    _cached_user_record.clear()
+    _cached_progress.clear()
+    _cached_quiz_results.clear()
+    _cached_community_posts.clear()
     _cached_users.clear()
 
 st.markdown(
@@ -921,6 +942,85 @@ def get_current_user(required: bool = True) -> dict | None:
     return st.session_state.demo_user
 
 
+def render_privacy_notice(*, compact: bool = False) -> None:
+    """Render the current privacy notice in onboarding, the modal and its page."""
+    if not compact:
+        st.markdown("<div class='m-kicker'>Account & data</div>", unsafe_allow_html=True)
+        st.title("Privacy notice")
+    st.caption(
+        f"Version {PRIVACY_POLICY_VERSION} · effective {PRIVACY_POLICY_EFFECTIVE_DATE}"
+    )
+    st.markdown(
+        """
+        **Who is responsible**
+
+        MOSAIC Learn is operated within the MOSAIC project and coordinated through VITO Nexus. Questions about this notice or the use of your personal data can be sent to [dieter.cuypers@vito.be](mailto:dieter.cuypers@vito.be).
+
+        **What information is stored**
+
+        - Basic identity information received from Google sign-in: name, email address and a provider-specific account identifier.
+        - Profile information you choose to provide: professional role, organisation, country or region, and learning interests.
+        - Learning activity: completed steps, quick-check results, confidence ratings and private reflections.
+        - Content you actively share, such as Community posts and public result summaries.
+        - Account permissions and, for administrators, content-editing activity.
+        - The privacy-notice version you accepted and the time of acceptance.
+
+        **Why the information is used**
+
+        The information is used to authenticate your account, save your learning record, tailor the learning experience, support Community features, provide result sharing that you initiate, and keep the service secure and operational. MOSAIC Learn does not sell personal data, use it for advertising or make decisions with legal or similarly significant effects through automated profiling.
+
+        **Services involved**
+
+        Google provides sign-in, Streamlit Community Cloud hosts the application, and Supabase/PostgreSQL stores production application data. These providers process information according to their own terms and the configuration selected by the MOSAIC Learn operators.
+
+        **Visibility and sharing**
+
+        Profile details, progress, quick-check results and reflections are private to your account and authorised administrators. A Community post becomes visible to other signed-in learners only when you publish it. A result summary becomes accessible to anyone with its generated link, but private reflections are excluded.
+
+        **Retention and deletion**
+
+        Account-linked information is kept while your account remains active. You can permanently delete the live account and its linked learning data from **My profile**. Temporary infrastructure backups may remain for a limited period according to the hosting and database providers' backup schedules.
+
+        **Your choices and rights**
+
+        You can view and edit your profile, withdraw consent by deleting your account, and contact the address above to ask about access, correction, restriction, portability, objection or deletion. You may also have the right to lodge a complaint with your national data-protection authority.
+
+        **Changes to this notice**
+
+        The current version is recorded with your account. If `PRIVACY_POLICY_VERSION` is changed in the application, MOSAIC Learn will show a blocking notice and require you to review and accept the new version before continuing. You are not asked to agree in advance to unknown future changes.
+        """
+    )
+
+
+@st.dialog("Privacy notice updated", width="large", dismissible=False)
+def privacy_reconsent_dialog(user_id: str) -> None:
+    st.write(
+        "The MOSAIC Learn privacy notice has changed. Review the current version before continuing."
+    )
+    with st.expander("Read the complete privacy notice", expanded=True):
+        render_privacy_notice(compact=True)
+    accepted = st.checkbox(
+        f"I have read and agree to privacy notice version {PRIVACY_POLICY_VERSION}."
+    )
+    if st.button(
+        "Accept and continue",
+        type="primary",
+        use_container_width=True,
+        disabled=not accepted,
+    ):
+        _record_privacy_acceptance(user_id)
+        st.rerun()
+
+
+def page_privacy() -> None:
+    render_privacy_notice()
+    st.info(
+        "This is an operational privacy notice for the current MOSAIC Learn prototype. "
+        "The project owner should have the final text, controller details, retention periods "
+        "and processor arrangements reviewed by the responsible privacy or legal contact before public launch."
+    )
+
+
 def ensure_profile(user: dict) -> dict:
     """Create the account record and show one-time learner onboarding."""
     stored = _cached_user_record(
@@ -936,10 +1036,15 @@ def ensure_profile(user: dict) -> dict:
         stored = get_user(user["user_id"]) or stored
     user["account_role"] = stored.get("account_role") or "learner"
     if stored.get("profile_complete"):
+        if stored.get("privacy_policy_version") != PRIVACY_POLICY_VERSION:
+            privacy_reconsent_dialog(user["user_id"])
+            st.stop()
         user["role"] = stored.get("role", "")
         user["organisation"] = stored.get("organisation", "")
         user["country"] = stored.get("country", "")
         user["interests"] = stored.get("interests", [])
+        user["privacy_policy_version"] = stored.get("privacy_policy_version", "")
+        user["privacy_accepted_at"] = stored.get("privacy_accepted_at", "")
         return user
 
     st.markdown(
@@ -971,18 +1076,30 @@ def ensure_profile(user: dict) -> dict:
             default=interest_labels[:1],
         )
         st.caption("Your private reflections are not shown in Community unless you explicitly publish a separate community post.")
+        with st.expander("Read the privacy notice"):
+            render_privacy_notice(compact=True)
+        privacy_accepted = st.checkbox(
+            f"I have read and agree to privacy notice version {PRIVACY_POLICY_VERSION}."
+        )
+        update_acknowledged = st.checkbox(
+            "I understand that MOSAIC Learn will ask me to review and accept a new version before I can continue if this notice changes."
+        )
         submitted = st.form_submit_button("Create my profile", type="primary", use_container_width=True)
     if submitted:
-        _save_profile(
-            user["user_id"],
-            role=role,
-            organisation=organisation,
-            country=country,
-            interests=[label_to_id[label] for label in chosen],
-            profile_complete=True,
-        )
-        st.session_state.route = "home"
-        st.rerun()
+        if not privacy_accepted or not update_acknowledged:
+            st.error("Accept the current privacy notice and confirm the update process to create your profile.")
+        else:
+            _save_profile(
+                user["user_id"],
+                role=role,
+                organisation=organisation,
+                country=country,
+                interests=[label_to_id[label] for label in chosen],
+                profile_complete=True,
+            )
+            _record_privacy_acceptance(user["user_id"])
+            st.session_state.route = "home"
+            st.rerun()
     st.stop()
 
 def module_completion(user_id: str, module_id: str):
@@ -1058,26 +1175,36 @@ def render_sidebar(user: dict | None):
         items = [
             ("home", "⌂  Home"),
             ("catalogue", "▦  Modules"),
+            ("learning", "◔  My learning"),
             ("tools", "◇  Tools"),
+            ("community", "✣  Community"),
             ("glossary", "A–Z  Glossary"),
             ("contact", "✉  Contact"),
-            ("learning", "◔  My learning"),
-            ("community", "✣  Community"),
         ]
         if user:
-            items.extend(
-                [
-                    ("results", "↗  Results"),
-                    ("profile", "○  Profile"),
-                ]
-            )
-        if user and is_administrator(user):
-            items.append(("admin", "⚙  Admin"))
-            st.caption("Administrator access")
+            items.append(("profile", "○  My profile"))
         for key, label in items:
             button_type = "primary" if route == key else "secondary"
             if st.button(label, key=f"nav-{key}", use_container_width=True, type=button_type):
                 navigate(key)
+
+        st.markdown("---")
+        if st.button(
+            "Privacy notice",
+            key="nav-privacy",
+            use_container_width=True,
+            type="primary" if route == "privacy" else "secondary",
+        ):
+            navigate("privacy")
+        if user and is_administrator(user):
+            st.caption("ADMINISTRATION")
+            if st.button(
+                "⚙  Admin",
+                key="nav-admin",
+                use_container_width=True,
+                type="primary" if route == "admin" else "secondary",
+            ):
+                navigate("admin")
 
         if user and route in {"module", "topic", "convince"}:
             st.markdown("---")
@@ -1691,7 +1818,18 @@ def page_tools(user):
 def page_learning(user):
     st.markdown("<div class='m-kicker'>Your dashboard</div>", unsafe_allow_html=True)
     st.title("My learning")
-    st.caption("Your active modules, progress and next lesson in one place.")
+    st.caption("Your active modules, progress, learning record and shareable results in one place.")
+
+    section = st.segmented_control(
+        "My learning section",
+        ["Learning overview", "Results & sharing"],
+        default="Learning overview",
+        key="learning-section",
+        label_visibility="collapsed",
+    )
+    if section == "Results & sharing":
+        page_results(user, embedded=True)
+        return
 
     available = [(mid, m) for mid, m in MODULES.items() if m["status"] == "Available"]
     if not available:
@@ -2348,9 +2486,15 @@ def page_convince(user):
             navigate("community")
 
 
-def page_results(user):
-    st.markdown("<div class='m-kicker'>Progress</div>", unsafe_allow_html=True)
-    st.title("Results & sharing")
+def page_results(user, *, embedded: bool = False):
+    if embedded:
+        st.markdown(
+            "<div class='m-section-title'><h2>Results & sharing</h2><p>Review one module's learning record and create a public summary without exposing private reflections.</p></div>",
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown("<div class='m-kicker'>Progress</div>", unsafe_allow_html=True)
+        st.title("Results & sharing")
     available_ids = [mid for mid, m in MODULES.items() if m["status"] == "Available"]
     module_id = st.selectbox(
         "Module",
@@ -2544,6 +2688,22 @@ def page_profile(user):
         st.success("Profile updated")
         st.rerun()
 
+    st.markdown(
+        "<div class='m-section-title'><h2>Privacy & consent</h2><p>See which privacy-notice version is linked to this account.</p></div>",
+        unsafe_allow_html=True,
+    )
+    privacy_col, notice_col = st.columns([1.6, 1])
+    with privacy_col:
+        accepted_at = str(stored.get("privacy_accepted_at") or "")[:10]
+        accepted_text = accepted_at or "Not recorded"
+        st.markdown(
+            f"**Accepted version:** {escape(stored.get('privacy_policy_version') or 'Not recorded')}  \n"
+            f"**Accepted on:** {escape(accepted_text)}"
+        )
+    with notice_col:
+        if st.button("Read privacy notice →", use_container_width=True):
+            navigate("privacy")
+
     st.markdown("<div class='m-section-title'><h2>My reflection notebook</h2><p>Everything you save while learning is gathered here, across all modules.</p></div>", unsafe_allow_html=True)
     reflections = []
     for module_id, module in MODULES.items():
@@ -2577,6 +2737,37 @@ def page_profile(user):
             )
             if st.button("Open learning step →", key=f"profile-reflection-open-{item['module_id']}-{item['topic']['id']}-{idx}"):
                 navigate("topic", item["module_id"], item["topic"]["id"])
+
+    st.markdown(
+        "<div class='m-section-title'><h2>Delete my account</h2><p>Permanently remove this profile and its linked MOSAIC Learn data.</p></div>",
+        unsafe_allow_html=True,
+    )
+    with st.expander("Delete account and learning data"):
+        st.warning(
+            "This permanently deletes your profile, progress, quick-check results, private reflections, "
+            "Community posts, public share links and privacy-consent history. It does not delete your Google account."
+        )
+        deletion_understood = st.checkbox(
+            "I understand that this action cannot be undone.",
+            key="delete-account-understood",
+        )
+        deletion_phrase = st.text_input(
+            "Type DELETE to confirm",
+            key="delete-account-confirmation",
+        )
+        if st.button(
+            "Permanently delete my account",
+            key="delete-account",
+            type="primary",
+            disabled=not deletion_understood or deletion_phrase.strip() != "DELETE",
+        ):
+            _delete_account_data(user["user_id"])
+            if user.get("demo"):
+                st.session_state.demo_user = None
+                st.session_state.route = "home"
+                st.rerun()
+            else:
+                st.logout()
 
     st.divider()
     if user.get("demo"):
@@ -2895,13 +3086,17 @@ st.session_state.pop("selected_topic", None)
 
 apply_published_carousel_overrides()
 route = st.session_state.route
+if route == "results":
+    # Keep old sessions and bookmarks working after Results moved under My learning.
+    st.session_state["learning-section"] = "Results & sharing"
+    st.session_state.route = "learning"
+    route = "learning"
 protected_routes = {
     "learning",
     "community",
     "module",
     "topic",
     "convince",
-    "results",
     "profile",
     "admin",
 }
@@ -2924,6 +3119,8 @@ elif route == "glossary":
     page_glossary()
 elif route == "contact":
     page_contact()
+elif route == "privacy":
+    page_privacy()
 elif route == "community":
     page_community(user)
 elif route == "module":
@@ -2932,8 +3129,6 @@ elif route == "topic":
     page_topic(user)
 elif route == "convince":
     page_convince(user)
-elif route == "results":
-    page_results(user)
 elif route == "profile":
     page_profile(user)
 elif route == "admin":

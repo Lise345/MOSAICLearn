@@ -123,6 +123,8 @@ def _sqlite_add_missing_user_columns(conn) -> None:
         "profile_complete": "INTEGER NOT NULL DEFAULT 0",
         "auth_issuer": "TEXT DEFAULT ''",
         "auth_subject": "TEXT DEFAULT ''",
+        "privacy_policy_version": "TEXT DEFAULT ''",
+        "privacy_accepted_at": "TEXT DEFAULT ''",
         "updated_at": "TEXT DEFAULT ''",
     }
     for column, definition in additions.items():
@@ -148,6 +150,8 @@ def init_db() -> None:
                         profile_complete INTEGER NOT NULL DEFAULT 0,
                         auth_issuer TEXT DEFAULT '',
                         auth_subject TEXT DEFAULT '',
+                        privacy_policy_version TEXT DEFAULT '',
+                        privacy_accepted_at TEXT DEFAULT '',
                         created_at TEXT NOT NULL,
                         updated_at TEXT NOT NULL
                     )
@@ -161,9 +165,21 @@ def init_db() -> None:
                     "ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_complete INTEGER NOT NULL DEFAULT 0",
                     "ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_issuer TEXT DEFAULT ''",
                     "ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_subject TEXT DEFAULT ''",
+                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS privacy_policy_version TEXT DEFAULT ''",
+                    "ALTER TABLE users ADD COLUMN IF NOT EXISTS privacy_accepted_at TEXT DEFAULT ''",
                     "ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TEXT DEFAULT ''",
                 ):
                     cur.execute(statement)
+                cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS privacy_consents (
+                        user_id TEXT NOT NULL,
+                        policy_version TEXT NOT NULL,
+                        accepted_at TEXT NOT NULL,
+                        PRIMARY KEY (user_id, policy_version)
+                    )
+                    """
+                )
                 cur.execute(
                     """
                     CREATE TABLE IF NOT EXISTS topic_progress (
@@ -258,8 +274,17 @@ def init_db() -> None:
                 profile_complete INTEGER NOT NULL DEFAULT 0,
                 auth_issuer TEXT DEFAULT '',
                 auth_subject TEXT DEFAULT '',
+                privacy_policy_version TEXT DEFAULT '',
+                privacy_accepted_at TEXT DEFAULT '',
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS privacy_consents (
+                user_id TEXT NOT NULL,
+                policy_version TEXT NOT NULL,
+                accepted_at TEXT NOT NULL,
+                PRIMARY KEY (user_id, policy_version)
             );
 
             CREATE TABLE IF NOT EXISTS topic_progress (
@@ -404,12 +429,69 @@ def get_user(user_id: str) -> dict | None:
     return _normalise_user(row)
 
 
+def record_privacy_acceptance(user_id: str, policy_version: str) -> str:
+    """Record acceptance of one policy version and expose the latest version on users."""
+    version = str(policy_version or "").strip()
+    if not version:
+        raise ValueError("policy_version is required")
+    accepted_at = _now()
+    with _connect() as conn:
+        conn.execute(
+            _query(
+                """
+                INSERT INTO privacy_consents(user_id, policy_version, accepted_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(user_id, policy_version) DO UPDATE SET
+                    accepted_at=excluded.accepted_at
+                """
+            ),
+            (user_id, version, accepted_at),
+        )
+        conn.execute(
+            _query(
+                """
+                UPDATE users
+                SET privacy_policy_version=?, privacy_accepted_at=?, updated_at=?
+                WHERE user_id=?
+                """
+            ),
+            (version, accepted_at, accepted_at, user_id),
+        )
+    return accepted_at
+
+
+def delete_user_account(user_id: str) -> None:
+    """Delete one learner account and its user-linked data in a single transaction."""
+    with _connect() as conn:
+        for table in (
+            "topic_progress",
+            "quiz_results",
+            "shares",
+            "community_posts",
+            "privacy_consents",
+        ):
+            conn.execute(_query(f"DELETE FROM {table} WHERE user_id=?"), (user_id,))
+
+        # Published learning content belongs to the platform. Keep it available,
+        # but remove the deleted administrator's identifier from its audit fields.
+        conn.execute(
+            _query("UPDATE carousel_content SET updated_by='' WHERE updated_by=?"),
+            (user_id,),
+        )
+        conn.execute(
+            _query("UPDATE carousel_revisions SET published_by='' WHERE published_by=?"),
+            (user_id,),
+        )
+        conn.execute(_query("DELETE FROM users WHERE user_id=?"), (user_id,))
+
+
 def list_users() -> list[dict]:
     """Return user profiles for administrator role management."""
     with _connect() as conn:
         rows = conn.execute(
             """
-            SELECT user_id, email, name, role, account_role, organisation, country, created_at, updated_at
+            SELECT user_id, email, name, role, account_role, organisation, country,
+                   privacy_policy_version, privacy_accepted_at, created_at, updated_at
             FROM users
             ORDER BY LOWER(COALESCE(name, '')), LOWER(COALESCE(email, ''))
             """
