@@ -316,6 +316,28 @@ html, body, [class*="css"] { font-family: Poppins, "Segoe UI", Arial, sans-serif
 .m-status { display:inline-block; font-size:.7rem; padding:.22rem .55rem; border-radius:999px; font-weight:700; }
 .m-status.available { background:var(--m-green-10); color:var(--m-green); } .m-status.soon { background:#efefec; color:#73736f; }
 
+.m-start-guide { margin:2.8rem 0 1.2rem; padding:clamp(1.25rem,3vw,2.25rem); border:1px solid var(--m-line); border-radius:24px; background:linear-gradient(145deg,#fbfbf8 0%,#f4f5ef 100%); }
+.m-start-intro { display:grid; grid-template-columns:minmax(0,1.05fr) minmax(250px,.95fr); gap:clamp(1rem,3vw,2.5rem); align-items:center; }
+.m-start-copy h2 { margin:.4rem 0 .65rem; font-size:clamp(1.65rem,3vw,2.35rem); line-height:1.08; letter-spacing:-.025em; }
+.m-start-copy p { margin:.45rem 0; max-width:680px; color:#555552; line-height:1.68; }
+.m-start-copy .m-start-reflection { margin-top:1rem; color:var(--m-grey); font-weight:600; }
+.m-start-image { display:flex; align-items:center; justify-content:center; min-height:220px; }
+.m-start-image img { display:block; width:100%; max-width:520px; max-height:270px; object-fit:contain; }
+.m-start-question { max-width:760px; margin:1.8rem auto 1rem; text-align:center; }
+.m-start-question h3 { margin:0 0 .35rem; font-size:1.35rem; letter-spacing:-.015em; }
+.m-start-question p { margin:0; color:var(--m-muted); line-height:1.55; }
+.m-start-choice { min-height:168px; box-sizing:border-box; display:flex; flex-direction:column; padding:1.1rem; margin-bottom:.65rem; border:1px solid var(--m-line); border-top:5px solid var(--m-blue); border-radius:17px; background:#fff; }
+.m-start-choice.community { border-top-color:var(--m-green); }
+.m-start-choice.learning { border-top-color:var(--m-blue); }
+.m-start-choice.empowerment { border-top-color:var(--m-ochre); }
+.m-start-choice .m-start-icon { margin-bottom:.65rem; color:var(--m-wine); font-size:1.15rem; }
+.m-start-choice h4 { margin:0 0 .4rem; font-size:1rem; line-height:1.4; }
+.m-start-choice p { flex:1; margin:0; color:var(--m-muted); font-size:.84rem; line-height:1.5; }
+.m-start-recommendation { margin:1.35rem 0 .8rem; padding:1.25rem 1.35rem; border:1px solid #c7d8e9; border-left:5px solid var(--m-blue); border-radius:18px; background:var(--m-blue-10); }
+.m-start-recommendation h3 { margin:.25rem 0 .4rem; font-size:1.35rem; }
+.m-start-recommendation p { margin:.25rem 0; max-width:880px; line-height:1.6; }
+.m-start-recommendation .m-module-meta { margin-top:.7rem; }
+
 .m-progress-shell { height:8px; border-radius:999px; background:#ededE8; overflow:hidden; margin:.55rem 0 .15rem; }
 .m-progress-fill { height:100%; border-radius:999px; background:var(--m-green); }
 
@@ -489,7 +511,7 @@ html, body, [class*="css"] { font-family: Poppins, "Segoe UI", Arial, sans-serif
 @media (max-width: 620px) {
     .block-container{padding-top:4.75rem;padding-left:1rem;padding-right:1rem}
     .m-building-grid,.m-evidence-grid,.m-resource-grid,.m-driver-grid,.m-tool-steps{grid-template-columns:1fr}
-    .m-track-card{min-height:0}.m-phase-header{grid-template-columns:44px minmax(0,1fr)}.m-phase-progress{grid-column:2;justify-self:start}.m-lesson-row{grid-template-columns:38px minmax(0,1fr)}.m-lesson-time{grid-column:2}
+    .m-track-card{min-height:0}.m-start-intro{grid-template-columns:1fr}.m-start-image{min-height:150px}.m-start-choice{min-height:0}.m-phase-header{grid-template-columns:44px minmax(0,1fr)}.m-phase-progress{grid-column:2;justify-self:start}.m-lesson-row{grid-template-columns:38px minmax(0,1fr)}.m-lesson-time{grid-column:2}
     [class*="st-key-path_step_"] [data-testid="stHorizontalBlock"]{gap:.55rem}.m-path-copy .meta{font-size:.63rem}
     .m-theory-card{min-height:0;padding:1.5rem 1.25rem;border-radius:19px}.m-theory-progress{width:78%;margin-bottom:.75rem}
     .st-key-theory_navigation [data-testid="stButton"] button{min-width:0;width:100%;font-size:.86rem}
@@ -1138,6 +1160,109 @@ def page_catalogue(user: dict | None):
                     navigate("module", module_id)
             else:
                 st.button("Coming soon", key=f"soon-{module_id}", disabled=True, use_container_width=True)
+
+    guide_image = asset_image_html(
+        "starting-point-heron.png",
+        alt="A heron standing among reeds and their reflections in the water",
+        css_class="m-start-illustration",
+    )
+    st.markdown(
+        f"""
+        <section class="m-start-guide">
+            <div class="m-start-intro">
+                <div class="m-start-copy">
+                    <div class="m-kicker">Find your starting point</div>
+                    <h2>Not sure where to start?</h2>
+                    <p>Take a moment. Think about a piece of land you care about: a field, a forest, a neighbourhood, a nature reserve or a farm.</p>
+                    <p class="m-start-reflection">Take away or add one element - a plant or animal, a person or community, soil or water. What changes? Who would notice this change first?</p>
+                </div>
+                <div class="m-start-image">{guide_image}</div>
+            </div>
+            <div class="m-start-question">
+                <h3>What brought you here today?</h3>
+                <p>Choose the question that comes closest. You can review the recommendation before opening a module.</p>
+            </div>
+        </section>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    starting_paths = [
+        (
+            "drivers",
+            "◎",
+            "Learning",
+            "Why is this happening?",
+            "Discover the drivers, relationships and feedbacks shaping the system.",
+        ),
+        (
+            "policy-lab",
+            "◫",
+            "Community",
+            "How can people move forward together?",
+            "Bring together people, organisations and perspectives around a shared challenge.",
+        ),
+        (
+            "future-pathways",
+            "↝",
+            "Empowerment",
+            "What future do we want to create?",
+            "Explore desirable futures and practical pathways towards them.",
+        ),
+    ]
+    choice_cols = st.columns(3)
+    for col, (module_id, icon, track, question, description) in zip(choice_cols, starting_paths):
+        with col:
+            st.markdown(
+                f"""
+                <div class="m-start-choice {track.lower()}">
+                    <div class="m-start-icon" aria-hidden="true">{icon}</div>
+                    <h4>{escape(question)}</h4>
+                    <p>{escape(description)}</p>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            if st.button(
+                "This sounds like me",
+                key=f"starting-point-{module_id}",
+                use_container_width=True,
+            ):
+                st.session_state.catalogue_recommendation = module_id
+
+    recommendation_id = st.session_state.get("catalogue_recommendation")
+    if recommendation_id in MODULES:
+        recommended = MODULES[recommendation_id]
+        st.markdown(
+            f"""
+            <div class="m-start-recommendation">
+                <div class="m-kicker">Your suggested starting point</div>
+                <h3>{escape(recommended['short_title'])}</h3>
+                <p>{escape(recommended['description'])}</p>
+                <div class="m-module-meta">
+                    <span>{escape(recommended['track'])}</span><span>•</span><span>{recommended['estimated_minutes']} min</span>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        open_col, reset_col = st.columns([1, 1])
+        with open_col:
+            if st.button(
+                "Open recommended module →",
+                key="open-recommended-module",
+                type="primary",
+                use_container_width=True,
+            ):
+                navigate("module", recommendation_id)
+        with reset_col:
+            if st.button(
+                "Choose a different question",
+                key="reset-recommendation",
+                use_container_width=True,
+            ):
+                st.session_state.pop("catalogue_recommendation", None)
+                st.rerun()
 
 
 TOOL_FILE_TYPES = {
