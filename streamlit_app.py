@@ -2881,7 +2881,16 @@ def page_admin(user):
         if working_key not in st.session_state:
             stored_payload = record.get("draft") or record.get("published") or default_carousel_payload(topic)
             st.session_state[working_key] = normalize_carousel_payload(stored_payload, topic)
-        payload = copy.deepcopy(st.session_state[working_key])
+        # Streamlit can preserve session state across a hot deployment. Older
+        # sessions therefore may still contain cards saved before `editor_id`
+        # was introduced, even though newly loaded database payloads are
+        # normalized above. Normalize on every editor entry so both legacy
+        # database records and already-open sessions are migrated safely.
+        payload = normalize_carousel_payload(
+            copy.deepcopy(st.session_state[working_key]),
+            topic,
+        )
+        st.session_state[working_key] = copy.deepcopy(payload)
 
         published_at = record.get("published_at") or "Not published from the editor yet"
         updated_at = record.get("updated_at") or "No saved draft yet"
