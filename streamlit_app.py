@@ -338,6 +338,27 @@ html, body, [class*="css"] { font-family: Poppins, "Segoe UI", Arial, sans-serif
 .m-start-recommendation p { margin:.25rem 0; max-width:880px; line-height:1.6; }
 .m-start-recommendation .m-module-meta { margin-top:.7rem; }
 
+.m-reference-intro { max-width:900px; margin:.35rem 0 1.35rem; color:var(--m-muted); line-height:1.65; }
+.m-glossary-card { box-sizing:border-box; min-height:205px; margin:0 0 .8rem; padding:1.05rem 1.1rem; border:1px solid var(--m-line); border-top:4px solid var(--m-blue); border-radius:16px; background:#fff; }
+.m-glossary-card h3 { margin:.05rem 0 .55rem; font-size:1.03rem; line-height:1.35; }
+.m-glossary-card .label { margin-bottom:.35rem; color:var(--m-wine); font-size:.67rem; font-weight:700; letter-spacing:.09em; text-transform:uppercase; }
+.m-glossary-card p { margin:0; color:#555552; font-size:.86rem; line-height:1.58; }
+.m-contact-card { box-sizing:border-box; min-height:100%; padding:1.25rem; border:1px solid var(--m-line); border-radius:18px; background:#fff; }
+.m-contact-card h2 { margin:.05rem 0 .55rem; font-size:1.3rem; }
+.m-contact-card > p { margin:.2rem 0 1rem; color:var(--m-muted); line-height:1.6; }
+.m-contact-group { margin-top:1.1rem; padding-top:1rem; border-top:1px solid var(--m-line); }
+.m-contact-group:first-of-type { margin-top:.7rem; }
+.m-contact-group h3 { margin:0 0 .55rem; font-size:.98rem; }
+.m-contact-person { margin:.55rem 0; }
+.m-contact-person strong { display:block; }
+.m-contact-person a { color:var(--m-blue) !important; text-decoration:none; }
+.m-contact-person a:hover { text-decoration:underline; }
+.m-contact-person span { color:var(--m-muted); font-size:.83rem; }
+.m-credits { margin:1.6rem 0 .5rem; padding:1.2rem 1.3rem; border-left:5px solid var(--m-ochre); border-radius:0 16px 16px 0; background:var(--m-ochre-10); }
+.m-credits h2 { margin:.1rem 0 .65rem; font-size:1.25rem; }
+.m-credits h3 { margin:1rem 0 .25rem; font-size:.95rem; }
+.m-credits p { margin:.25rem 0; line-height:1.6; }
+
 .m-progress-shell { height:8px; border-radius:999px; background:#ededE8; overflow:hidden; margin:.55rem 0 .15rem; }
 .m-progress-fill { height:100%; border-radius:999px; background:var(--m-green); }
 
@@ -511,7 +532,7 @@ html, body, [class*="css"] { font-family: Poppins, "Segoe UI", Arial, sans-serif
 @media (max-width: 620px) {
     .block-container{padding-top:4.75rem;padding-left:1rem;padding-right:1rem}
     .m-building-grid,.m-evidence-grid,.m-resource-grid,.m-driver-grid,.m-tool-steps{grid-template-columns:1fr}
-    .m-track-card{min-height:0}.m-start-intro{grid-template-columns:1fr}.m-start-image{min-height:150px}.m-start-choice{min-height:0}.m-phase-header{grid-template-columns:44px minmax(0,1fr)}.m-phase-progress{grid-column:2;justify-self:start}.m-lesson-row{grid-template-columns:38px minmax(0,1fr)}.m-lesson-time{grid-column:2}
+    .m-track-card{min-height:0}.m-start-intro{grid-template-columns:1fr}.m-start-image{min-height:150px}.m-start-choice,.m-glossary-card{min-height:0}.m-phase-header{grid-template-columns:44px minmax(0,1fr)}.m-phase-progress{grid-column:2;justify-self:start}.m-lesson-row{grid-template-columns:38px minmax(0,1fr)}.m-lesson-time{grid-column:2}
     [class*="st-key-path_step_"] [data-testid="stHorizontalBlock"]{gap:.55rem}.m-path-copy .meta{font-size:.63rem}
     .m-theory-card{min-height:0;padding:1.5rem 1.25rem;border-radius:19px}.m-theory-progress{width:78%;margin-bottom:.75rem}
     .st-key-theory_navigation [data-testid="stButton"] button{min-width:0;width:100%;font-size:.86rem}
@@ -1038,6 +1059,8 @@ def render_sidebar(user: dict | None):
             ("home", "⌂  Home"),
             ("catalogue", "▦  Modules"),
             ("tools", "◇  Tools"),
+            ("glossary", "A–Z  Glossary"),
+            ("contact", "✉  Contact"),
             ("learning", "◔  My learning"),
             ("community", "✣  Community"),
         ]
@@ -1116,7 +1139,10 @@ def page_home(user: dict | None):
                 module = MODULES[target_id]
                 if module["status"] == "Available":
                     if st.button(f"Explore {title.lower()} →", key=f"home-track-{target_id}", use_container_width=True):
-                        navigate("module", target_id)
+                        if title == "Learning":
+                            navigate("catalogue")
+                        else:
+                            navigate("module", target_id)
                 else:
                     st.button("Coming soon", key=f"home-track-{target_id}", disabled=True, use_container_width=True)
 
@@ -1263,6 +1289,176 @@ def page_catalogue(user: dict | None):
             ):
                 st.session_state.pop("catalogue_recommendation", None)
                 st.rerun()
+
+
+GLOSSARY_TERMS = [
+    (
+        "Systems Thinking",
+        "An approach that considers the complexity and interdependencies of policy challenges by examining relationships, feedback loops and the wider system rather than isolated components.",
+    ),
+    (
+        "Design Thinking",
+        "A human-centered, creative problem-solving method that emphasizes empathy, ideation, prototyping and testing.",
+    ),
+    (
+        "Policy Innovation",
+        "The development and application of novel policy tools, processes or ideas to address emerging or persistent societal challenges.",
+    ),
+    (
+        "Policy Evaluation",
+        "A structured assessment of a policy's design, implementation and impact to determine its effectiveness, efficiency, relevance and sustainability.",
+    ),
+    (
+        "Evidence-Informed Policy",
+        "Policymaking guided by systematically collected and analyzed research evidence, together with professional expertise, stakeholder knowledge and contextual understanding.",
+    ),
+    (
+        "Policy Experimentation",
+        "The testing of new or alternative policy approaches in controlled or pilot settings to assess their feasibility, effects and potential for wider use.",
+    ),
+    (
+        "Policy Lab",
+        "A collaborative space where researchers, policymakers and stakeholders co-create, test and refine solutions to complex policy challenges.",
+    ),
+    (
+        "Knowledge Broker",
+        "A member of the Policy Lab team who facilitates connections among research stakeholders at the science-policy interface and supports the exchange and use of knowledge.",
+    ),
+    (
+        "Policy Lead",
+        "A Policy Lab representative responsible for linking the lab to current and emerging policy processes, priorities and decision-making opportunities.",
+    ),
+    (
+        "Living Lab",
+        "An open innovation environment where stakeholders, including users and citizens, co-create and test solutions in real-life contexts.",
+    ),
+    (
+        "Knowledge Exchange",
+        "The mutual sharing of ideas, expertise and information between researchers, policymakers and other stakeholders.",
+    ),
+    (
+        "Co-creation",
+        "A collaborative process in which researchers, policymakers and other stakeholders jointly develop knowledge, policies or solutions.",
+    ),
+    (
+        "Stakeholder Engagement",
+        "The active involvement of relevant actors throughout the policy process to incorporate different knowledge, interests and perspectives.",
+    ),
+    (
+        "Knowledge Translation",
+        "The synthesis and adaptation of research findings into accessible formats and language to support understanding and decision-making.",
+    ),
+    (
+        "Iterative Design",
+        "A cyclical process of developing, testing and refining policy interventions through continuous learning and feedback.",
+    ),
+    (
+        "Action Research",
+        "A participatory research method in which researchers engage directly in the policy process to generate knowledge while supporting practical change.",
+    ),
+]
+
+
+def page_glossary():
+    st.markdown("<div class='m-kicker'>Reference</div>", unsafe_allow_html=True)
+    st.title("Glossary")
+    st.markdown(
+        """
+        <p class="m-reference-intro">This glossary provides a foundational understanding of key concepts relevant to the setup and operation of Policy Labs within the MOSAIC research project. A shared understanding supports interregional, interdisciplinary and transdisciplinary learning.</p>
+        """,
+        unsafe_allow_html=True,
+    )
+    query = st.text_input(
+        "Search the glossary",
+        placeholder="Search for systems thinking, co-creation, Policy Lab...",
+    ).strip().lower()
+    filtered = [
+        (term, definition)
+        for term, definition in GLOSSARY_TERMS
+        if not query or query in term.lower() or query in definition.lower()
+    ]
+    st.caption(f"{len(filtered)} of {len(GLOSSARY_TERMS)} concepts shown")
+    if not filtered:
+        st.info("No concepts match that search. Try a broader word or clear the search field.")
+        return
+    cols = st.columns(3)
+    for index, (term, definition) in enumerate(filtered):
+        with cols[index % 3]:
+            st.markdown(
+                f"""
+                <article class="m-glossary-card">
+                    <div class="label">Definition</div>
+                    <h3>{escape(term)}</h3>
+                    <p>{escape(definition)}</p>
+                </article>
+                """,
+                unsafe_allow_html=True,
+            )
+
+
+def page_contact():
+    st.markdown("<div class='m-kicker'>About MOSAIC Learn</div>", unsafe_allow_html=True)
+    st.title("Contact details")
+    st.markdown(
+        "<p class='m-reference-intro'>MOSAIC Learn brings together coordination by VITO Nexus and contributions from the MOSAIC work package leaders who developed the module content.</p>",
+        unsafe_allow_html=True,
+    )
+    nexus_col, contributors_col = st.columns(2)
+    with nexus_col:
+        st.markdown(
+            """
+            <section class="m-contact-card">
+                <h2>VITO Nexus</h2>
+                <p>VITO Nexus coordinates the MOSAIC program. Within VITO, Nexus offers an open think and do space in which anything is possible, as long as it contributes to deep sustainability and leads to actionable knowledge.</p>
+                <div class="m-contact-group">
+                    <h3>Collaborated on this platform</h3>
+                    <div class="m-contact-person"><strong>Dieter Cuypers</strong><a href="mailto:dieter.cuypers@vito.be">dieter.cuypers@vito.be</a></div>
+                    <div class="m-contact-person"><strong>Lise Vermeersch</strong><a href="mailto:lise.vermeersch@vito.be">lise.vermeersch@vito.be</a></div>
+                    <div class="m-contact-person"><strong>Maria Caballero Pons</strong></div>
+                </div>
+            </section>
+            """,
+            unsafe_allow_html=True,
+        )
+    with contributors_col:
+        st.markdown(
+            """
+            <section class="m-contact-card">
+                <h2>MOSAIC work package leaders</h2>
+                <p>The work package leaders of the MOSAIC project provided the content of the modules on this website.</p>
+                <div class="m-contact-group">
+                    <h3>Drivers of Change</h3>
+                    <div class="m-contact-person"><strong>Inge Liekens</strong><a href="mailto:inge.liekens@vito.be">inge.liekens@vito.be</a></div>
+                </div>
+                <div class="m-contact-group">
+                    <h3>Policy Labs</h3>
+                    <div class="m-contact-person"><strong>Boldizsar Megyesi, Hanna Acsady and Katalin Varsanyi</strong><a href="mailto:megyesi.boldizsar@essrg.hu">megyesi.boldizsar@essrg.hu</a></div>
+                </div>
+                <div class="m-contact-group">
+                    <h3>Future Pathways</h3>
+                    <div class="m-contact-person"><strong>Thomas Schmitt and Max Tscholl</strong><a href="mailto:thomas.schmitt@kit.edu">thomas.schmitt@kit.edu</a></div>
+                </div>
+            </section>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    st.markdown(
+        """
+        <section class="m-credits">
+            <h2>Acknowledgements</h2>
+            <p>Developed within the MOSAIC project (Horizon Europe, Grant Agreement 101081238).</p>
+            <p>We thank Policy Lab coordinators and local stakeholders for their time and expertise.</p>
+            <h3>References</h3>
+            <p>Full references are available on the <a href="https://mosaic-europe.eu/mosaic/mosaic-resources" target="_blank" rel="noopener noreferrer">MOSAIC website</a>.</p>
+            <h3>Disclaimer</h3>
+            <p>This page reflects the views of the MOSAIC contributors. The European Commission is not responsible for any use of the information provided.</p>
+            <p>Content is under development - share feedback via <a href="mailto:dieter.cuypers@vito.be">dieter.cuypers@vito.be</a>.</p>
+            <p>Unless stated otherwise, materials are shared under CC BY-NC-ND 4.0: credit required, non-commercial and no derivatives.</p>
+        </section>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 TOOL_FILE_TYPES = {
@@ -2724,6 +2920,10 @@ elif route == "catalogue":
     page_catalogue(user)
 elif route == "tools":
     page_tools(user)
+elif route == "glossary":
+    page_glossary()
+elif route == "contact":
+    page_contact()
 elif route == "community":
     page_community(user)
 elif route == "module":
