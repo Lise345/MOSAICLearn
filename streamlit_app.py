@@ -328,7 +328,7 @@ html, body, [class*="css"] { font-family: Poppins, "Segoe UI", Arial, sans-serif
 .m-track-card h3 { margin:.05rem 0 .5rem; font-size:1.18rem; letter-spacing:-.015em; }
 .m-track-card p { color:var(--m-muted); margin:0; line-height:1.58; font-size:.9rem; flex:1; }
 
-.m-module-card { border-radius:20px; overflow:hidden; height:390px; margin-bottom:.7rem; display:flex; flex-direction:column; box-sizing:border-box; }
+.m-module-card { border-radius:20px; overflow:hidden; height:420px; margin-bottom:.7rem; display:flex; flex-direction:column; box-sizing:border-box; }
 .m-module-card .m-module-art { flex:0 0 88px; }
 .m-module-card .m-module-body { flex:1; display:flex; flex-direction:column; min-height:0; }
 .m-module-art { height:88px; position:relative; overflow:hidden; background:#f6f6f3; }
