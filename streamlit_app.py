@@ -328,7 +328,9 @@ html, body, [class*="css"] { font-family: Poppins, "Segoe UI", Arial, sans-serif
 .m-track-card h3 { margin:.05rem 0 .5rem; font-size:1.18rem; letter-spacing:-.015em; }
 .m-track-card p { color:var(--m-muted); margin:0; line-height:1.58; font-size:.9rem; flex:1; }
 
-.m-module-card { border-radius:20px; overflow:hidden; min-height:298px; margin-bottom:.7rem; }
+.m-module-card { border-radius:20px; overflow:hidden; height:390px; margin-bottom:.7rem; display:flex; flex-direction:column; box-sizing:border-box; }
+.m-module-card .m-module-art { flex:0 0 88px; }
+.m-module-card .m-module-body { flex:1; display:flex; flex-direction:column; min-height:0; }
 .m-module-art { height:88px; position:relative; overflow:hidden; background:#f6f6f3; }
 .m-module-art:before, .m-module-art:after { content:""; position:absolute; border-radius:15px; transform:rotate(-8deg); }
 .m-module-art:before { width:42%; height:120%; right:11%; top:-30%; }
@@ -338,8 +340,8 @@ html, body, [class*="css"] { font-family: Poppins, "Segoe UI", Arial, sans-serif
 .m-module-art.empowerment { border-top:7px solid var(--m-ochre); } .m-module-art.empowerment:before{background:var(--m-ochre)} .m-module-art.empowerment:after{background:var(--m-wine)}
 .m-module-body { padding:1.05rem 1.1rem 1rem; }
 .m-module-body h3 { margin:.45rem 0; font-size:1.2rem; line-height:1.23; }
-.m-module-body p { color:var(--m-muted); font-size:.88rem; line-height:1.55; min-height:68px; }
-.m-module-meta { display:flex; gap:.45rem; flex-wrap:wrap; margin-top:.65rem; color:var(--m-muted); font-size:.78rem; }
+.m-module-body p { color:var(--m-muted); font-size:.88rem; line-height:1.55; min-height:68px; flex:1; }
+.m-module-meta { display:flex; gap:.45rem; flex-wrap:wrap; margin-top:auto; padding-top:.65rem; color:var(--m-muted); font-size:.78rem; }
 .m-status { display:inline-block; font-size:.7rem; padding:.22rem .55rem; border-radius:999px; font-weight:700; }
 .m-status.available { background:var(--m-green-10); color:var(--m-green); } .m-status.soon { background:#efefec; color:#73736f; }
 
@@ -548,6 +550,15 @@ html, body, [class*="css"] { font-family: Poppins, "Segoe UI", Arial, sans-serif
 .m-admin-note p { margin:.3rem 0 0; color:#4f5965; line-height:1.6; }
 .m-share-card { max-width:760px; border:1px solid var(--m-line); border-radius:18px; padding:1.25rem; background:var(--m-soft); }
 .m-community-hero { border:1px solid var(--m-line); border-radius:22px; padding:clamp(1.4rem,4vw,2.6rem); background:linear-gradient(120deg,var(--m-green-10),#fff 60%,var(--m-lime-10)); margin-bottom:1.15rem; border-top:7px solid var(--m-green); } .m-community-hero h1{margin:.35rem 0 .55rem;font-size:clamp(2rem,4vw,3rem);letter-spacing:-.03em}.m-community-hero p{max-width:760px;color:#50504d;line-height:1.65}.m-post{border:1px solid var(--m-line);border-radius:15px;padding:.95rem 1rem;background:white;margin:.65rem 0}.m-post-meta{color:var(--m-muted);font-size:.76rem;margin-bottom:.42rem}.m-post p{margin:0;white-space:pre-wrap;line-height:1.6}
+.m-community-invitation { margin:0 0 1.25rem; }
+.m-community-count { display:inline-flex; align-items:center; gap:.45rem; margin:0 0 .8rem; padding:.38rem .72rem; border-radius:999px; background:var(--m-green-10); color:var(--m-green); font-size:.78rem; font-weight:700; }
+.m-community-prompt-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:.7rem; }
+.m-community-prompt { min-height:132px; box-sizing:border-box; padding:1rem; border:1px solid var(--m-line); border-top:4px solid var(--m-green); border-radius:16px; background:#fff; }
+.m-community-prompt:nth-child(2) { border-top-color:var(--m-blue); }
+.m-community-prompt:nth-child(3) { border-top-color:var(--m-ochre); }
+.m-community-prompt .icon { font-size:1.1rem; color:var(--m-wine); }
+.m-community-prompt h3 { margin:.45rem 0 .3rem; font-size:1rem; }
+.m-community-prompt p { margin:0; color:var(--m-muted); font-size:.84rem; line-height:1.5; }
 
 @media (max-width: 820px) {
     .block-container{padding-left:1.25rem;padding-right:1.25rem}
@@ -558,8 +569,8 @@ html, body, [class*="css"] { font-family: Poppins, "Segoe UI", Arial, sans-serif
 }
 @media (max-width: 620px) {
     .block-container{padding-top:4.75rem;padding-left:1rem;padding-right:1rem}
-    .m-building-grid,.m-evidence-grid,.m-resource-grid,.m-driver-grid,.m-tool-steps{grid-template-columns:1fr}
-    .m-track-card{min-height:0}.m-start-intro{grid-template-columns:1fr}.m-start-image{min-height:150px}.m-start-choice,.m-glossary-card{min-height:0}.m-phase-header{grid-template-columns:44px minmax(0,1fr)}.m-phase-progress{grid-column:2;justify-self:start}.m-lesson-row{grid-template-columns:38px minmax(0,1fr)}.m-lesson-time{grid-column:2}
+    .m-building-grid,.m-evidence-grid,.m-resource-grid,.m-driver-grid,.m-tool-steps,.m-community-prompt-grid{grid-template-columns:1fr}
+    .m-track-card{min-height:0}.m-module-card{height:auto;min-height:0}.m-start-intro{grid-template-columns:1fr}.m-start-image{min-height:150px}.m-start-choice,.m-glossary-card{min-height:0}.m-phase-header{grid-template-columns:44px minmax(0,1fr)}.m-phase-progress{grid-column:2;justify-self:start}.m-lesson-row{grid-template-columns:38px minmax(0,1fr)}.m-lesson-time{grid-column:2}
     [class*="st-key-path_step_"] [data-testid="stHorizontalBlock"]{gap:.55rem}.m-path-copy .meta{font-size:.63rem}
     .m-theory-card{min-height:0;padding:1.5rem 1.25rem;border-radius:19px}.m-theory-progress{width:78%;margin-bottom:.75rem}
     .st-key-theory_navigation [data-testid="stButton"] button{min-width:0;width:100%;font-size:.86rem}
@@ -1203,8 +1214,6 @@ def render_sidebar(user: dict | None):
             ("learning", "◔  My learning"),
             ("tools", "◇  Tools"),
             ("community", "✣  Community"),
-            ("glossary", "A–Z  Glossary"),
-            ("contact", "✉  Contact"),
         ]
         if user:
             items.append(("profile", "○  My profile"))
@@ -1213,14 +1222,17 @@ def render_sidebar(user: dict | None):
             if st.button(label, key=f"nav-{key}", use_container_width=True, type=button_type):
                 navigate(key)
 
+        # Keep reference and legal pages together beneath a quiet divider.
         st.markdown("---")
-        if st.button(
-            "Privacy notice",
-            key="nav-privacy",
-            use_container_width=True,
-            type="primary" if route == "privacy" else "secondary",
-        ):
-            navigate("privacy")
+        reference_items = [
+            ("privacy", "Privacy notice"),
+            ("glossary", "A–Z  Glossary"),
+            ("contact", "✉  Contact"),
+        ]
+        for key, label in reference_items:
+            button_type = "primary" if route == key else "secondary"
+            if st.button(label, key=f"nav-{key}", use_container_width=True, type=button_type):
+                navigate(key)
         if user and is_administrator(user):
             st.caption("ADMINISTRATION")
             if st.button(
@@ -1290,9 +1302,12 @@ def page_home(user: dict | None):
             else:
                 module = MODULES[target_id]
                 if module["status"] == "Available":
-                    if st.button(f"Explore {title.lower()} →", key=f"home-track-{target_id}", use_container_width=True):
+                    button_label = "Open my learning →" if title == "Empowerment" else f"Explore {title.lower()} →"
+                    if st.button(button_label, key=f"home-track-{target_id}", use_container_width=True):
                         if title == "Learning":
                             navigate("catalogue")
+                        elif title == "Empowerment":
+                            navigate("learning")
                         else:
                             navigate("module", target_id)
                 else:
@@ -2602,11 +2617,39 @@ def page_community(user):
         unsafe_allow_html=True,
     )
 
-    browse_tab, share_tab = st.tabs(["Browse reflections", "Create a post"])
+    posts = _cached_community_posts(40)
+    post_count = len(posts)
+    reflection_label = "reflection" if post_count == 1 else "reflections"
+    st.markdown(
+        f"""
+        <section class="m-community-invitation">
+            <div class="m-community-count">✣ {post_count} {reflection_label} shared so far</div>
+            <div class="m-community-prompt-grid">
+                <article class="m-community-prompt">
+                    <div class="icon" aria-hidden="true">◎</div>
+                    <h3>Share what changed</h3>
+                    <p>Tell others what you tried, what shifted and what you would do differently next time.</p>
+                </article>
+                <article class="m-community-prompt">
+                    <div class="icon" aria-hidden="true">⇄</div>
+                    <h3>Compare contexts</h3>
+                    <p>Notice how the same idea works differently across places, institutions and land-use settings.</p>
+                </article>
+                <article class="m-community-prompt">
+                    <div class="icon" aria-hidden="true">?</div>
+                    <h3>Ask the network</h3>
+                    <p>Bring a practical question or unresolved tension to learners working on related challenges.</p>
+                </article>
+            </div>
+        </section>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    browse_tab, share_tab = st.tabs(["Explore reflections", "Share your perspective"])
     with browse_tab:
-        posts = _cached_community_posts(40)
         if not posts:
-            st.info("No reflections have been shared yet. Be the first to add one.")
+            st.info("No reflections have been shared yet. Start the conversation with a field observation, question or lesson learned.")
         for post in posts:
             module = MODULES.get(post.get("module_id"))
             module_label = module["short_title"] if module else "General reflection"
