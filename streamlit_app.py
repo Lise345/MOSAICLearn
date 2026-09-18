@@ -31,26 +31,32 @@ from content import (
 )
 from db import (
     configure_database,
+    create_community_comment,
     create_community_post,
     create_share,
     database_backend,
     delete_user_account,
     ensure_user,
     get_carousel_content,
+    get_community_activity,
     get_progress,
     get_quiz_results,
     get_share,
-    list_community_posts,
     get_user,
     init_db,
+    list_community_notifications,
+    list_community_posts,
     list_published_carousels,
     list_users,
+    mark_community_notifications_read,
     publish_carousel_content,
     record_privacy_acceptance,
     save_quiz_result,
     save_carousel_draft,
     save_topic_progress,
     set_account_role,
+    toggle_community_reaction,
+    unread_community_notification_count,
     update_user_profile,
 )
 
@@ -66,7 +72,7 @@ PRIVACY_POLICY_EFFECTIVE_DATE = "17 September 2026"
 # Change this value whenever init_db() gains a migration. It is passed into the
 # cached initializer so Streamlit Cloud cannot reuse a pre-migration cache entry
 # after a hot deployment.
-DATABASE_SCHEMA_VERSION = "2026-09-17-privacy-v1"
+DATABASE_SCHEMA_VERSION = "2026-09-18-community-v1"
 
 # Prefer a dedicated square favicon, then the approved MOSAIC logo. The globe
 # is retained only as a last-resort fallback when neither image is installed.
@@ -140,6 +146,27 @@ def _cached_community_posts(limit: int = 30) -> list[dict]:
     return list_community_posts(limit)
 
 
+@st.cache_data(ttl=20, show_spinner=False)
+def _cached_community_activity(post_ids: tuple[int, ...], user_id: str) -> dict:
+    return get_community_activity(post_ids, user_id)
+
+
+@st.cache_data(ttl=20, show_spinner=False)
+def _cached_unread_community_notifications(user_id: str) -> int:
+    return unread_community_notification_count(user_id)
+
+
+@st.cache_data(ttl=20, show_spinner=False)
+def _cached_community_notifications(user_id: str, limit: int = 30) -> list[dict]:
+    return list_community_notifications(user_id, limit)
+
+
+def _clear_community_interaction_caches() -> None:
+    _cached_community_activity.clear()
+    _cached_unread_community_notifications.clear()
+    _cached_community_notifications.clear()
+
+
 @st.cache_data(ttl=30, show_spinner=False)
 def _cached_users() -> list[dict]:
     return list_users()
@@ -178,6 +205,7 @@ def _delete_account_data(user_id: str) -> None:
     _cached_progress.clear()
     _cached_quiz_results.clear()
     _cached_community_posts.clear()
+    _clear_community_interaction_caches()
     _cached_users.clear()
 
 st.markdown(
@@ -559,6 +587,19 @@ html, body, [class*="css"] { font-family: Poppins, "Segoe UI", Arial, sans-serif
 .m-community-prompt .icon { font-size:1.1rem; color:var(--m-wine); }
 .m-community-prompt h3 { margin:.45rem 0 .3rem; font-size:1rem; }
 .m-community-prompt p { margin:0; color:var(--m-muted); font-size:.84rem; line-height:1.5; }
+.st-key-nav-community button { position:relative !important; padding-right:2.7rem !important; }
+[class*="st-key-community_post_"] { margin:.8rem 0; padding:1rem 1.05rem .85rem; border:1px solid var(--m-line); border-radius:17px; background:#fff; }
+[class*="st-key-community_post_"] .m-post { margin:0 0 .55rem; padding:0; border:0; border-radius:0; }
+.m-reaction-summary { color:var(--m-muted); font-size:.76rem; line-height:2.5; text-align:right; }
+.m-comment { margin:.55rem 0; padding:.72rem .8rem; border-left:3px solid var(--m-cyan); border-radius:0 11px 11px 0; background:var(--m-cyan-10); }
+.m-comment-meta { margin-bottom:.25rem; color:var(--m-muted); font-size:.72rem; }
+.m-comment p { margin:0; font-size:.86rem; line-height:1.5; white-space:pre-wrap; }
+.m-notification { margin:.55rem 0; padding:.8rem .9rem; border:1px solid var(--m-line); border-left:4px solid #c9c9c4; border-radius:0 13px 13px 0; background:#fff; }
+.m-notification.unread { border-left-color:#d6283f; background:#fff8f8; }
+.m-notification p { margin:0 0 .22rem; line-height:1.5; }
+.m-notification a { color:var(--m-blue) !important; font-weight:600; text-decoration:none; }
+.m-notification a:hover { text-decoration:underline; }
+.m-notification .meta { color:var(--m-muted); font-size:.72rem; }
 
 @media (max-width: 820px) {
     .block-container{padding-left:1.25rem;padding-right:1.25rem}
@@ -1200,6 +1241,9 @@ def module_card_html(module_id: str, user_id: str | None = None) -> str:
 
 def render_sidebar(user: dict | None):
     route = st.session_state.get("route", "home")
+    unread_community = (
+        _cached_unread_community_notifications(user["user_id"]) if user else 0
+    )
     with st.sidebar:
         st.markdown(brand_home_html(sidebar=True), unsafe_allow_html=True)
         if user:
@@ -1221,6 +1265,36 @@ def render_sidebar(user: dict | None):
             button_type = "primary" if route == key else "secondary"
             if st.button(label, key=f"nav-{key}", use_container_width=True, type=button_type):
                 navigate(key)
+
+        if unread_community:
+            badge_text = "9+" if unread_community > 9 else str(unread_community)
+            st.markdown(
+                f"""
+                <style>
+                .st-key-nav-community button::after {{
+                    content:"{badge_text}";
+                    position:absolute;
+                    right:.62rem;
+                    top:50%;
+                    transform:translateY(-50%);
+                    display:flex;
+                    align-items:center;
+                    justify-content:center;
+                    min-width:1.15rem;
+                    height:1.15rem;
+                    padding:0 .22rem;
+                    border-radius:999px;
+                    background:#d6283f;
+                    color:#fff;
+                    font-size:.64rem;
+                    font-weight:700;
+                    line-height:1;
+                    box-shadow:0 0 0 2px #fff;
+                }}
+                </style>
+                """,
+                unsafe_allow_html=True,
+            )
 
         # Keep reference and legal pages together beneath a quiet divider.
         st.markdown("---")
@@ -2617,7 +2691,13 @@ def page_community(user):
         unsafe_allow_html=True,
     )
 
+    user_id = user["user_id"]
     posts = _cached_community_posts(40)
+    post_ids = tuple(int(post["post_id"]) for post in posts)
+    activity = _cached_community_activity(post_ids, user_id)
+    unread_on_entry = _cached_unread_community_notifications(user_id)
+    notifications = _cached_community_notifications(user_id, 30)
+
     post_count = len(posts)
     reflection_label = "reflection" if post_count == 1 else "reflections"
     st.markdown(
@@ -2646,24 +2726,136 @@ def page_community(user):
         unsafe_allow_html=True,
     )
 
-    browse_tab, share_tab = st.tabs(["Explore reflections", "Share your perspective"])
+    notification_label = (
+        f"Notifications ({unread_on_entry})" if unread_on_entry else "Notifications"
+    )
+    browse_tab, share_tab, notification_tab = st.tabs(
+        ["Explore reflections", "Share your perspective", notification_label]
+    )
+
+    reaction_choices = [
+        ("like", "👍", "Like"),
+        ("insightful", "💡", "Insightful"),
+        ("support", "💚", "Support"),
+    ]
+
     with browse_tab:
         if not posts:
-            st.info("No reflections have been shared yet. Start the conversation with a field observation, question or lesson learned.")
+            st.info(
+                "No reflections have been shared yet. Start the conversation with "
+                "a field observation, question or lesson learned."
+            )
         for post in posts:
+            post_id = int(post["post_id"])
             module = MODULES.get(post.get("module_id"))
             module_label = module["short_title"] if module else "General reflection"
-            topic = topic_by_id(post.get("module_id"), post.get("topic_id")) if post.get("module_id") in MODULES and post.get("topic_id") else None
+            topic = (
+                topic_by_id(post.get("module_id"), post.get("topic_id"))
+                if post.get("module_id") in MODULES and post.get("topic_id")
+                else None
+            )
             context = module_label + (f" · {topic['title']}" if topic else "")
             date_text = str(post.get("created_at", ""))[:10]
-            st.markdown(
-                f"<div class='m-post'><div class='m-post-meta'><strong>{escape(post['author_name'])}</strong> · {escape(context)} · {escape(date_text)}</div><p>{escape(post['post_text'])}</p></div>",
-                unsafe_allow_html=True,
-            )
+            reaction_counts = activity["reaction_counts"].get(post_id, {})
+            viewer_reaction = activity["viewer_reactions"].get(post_id)
+            comments = activity["comments"].get(post_id, [])
+
+            with st.container(key=f"community_post_{post_id}"):
+                st.markdown(
+                    f"""
+                    <article class="m-post" id="community-post-{post_id}">
+                        <div class="m-post-meta">
+                            <strong>{escape(post['author_name'])}</strong>
+                            · {escape(context)} · {escape(date_text)}
+                        </div>
+                        <p>{escape(post['post_text'])}</p>
+                    </article>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+                reaction_cols = st.columns([1, 1, 1, 2.2])
+                for reaction_col, (reaction_key, icon, label) in zip(
+                    reaction_cols[:3], reaction_choices
+                ):
+                    with reaction_col:
+                        count = int(reaction_counts.get(reaction_key, 0))
+                        if st.button(
+                            f"{icon} {label} · {count}",
+                            key=f"react-{reaction_key}-{post_id}",
+                            type="primary" if viewer_reaction == reaction_key else "secondary",
+                            use_container_width=True,
+                        ):
+                            toggle_community_reaction(
+                                post_id,
+                                user_id,
+                                user["name"],
+                                reaction_key,
+                            )
+                            _clear_community_interaction_caches()
+                            st.rerun()
+                with reaction_cols[3]:
+                    total_reactions = sum(int(value) for value in reaction_counts.values())
+                    st.markdown(
+                        f"<div class='m-reaction-summary'>{total_reactions} reactions · {len(comments)} comments</div>",
+                        unsafe_allow_html=True,
+                    )
+
+                with st.expander(f"Comments ({len(comments)})"):
+                    if comments:
+                        for comment in comments:
+                            comment_date = str(comment.get("created_at", ""))[:10]
+                            st.markdown(
+                                f"""
+                                <div class="m-comment">
+                                    <div class="m-comment-meta">
+                                        <strong>{escape(comment['author_name'])}</strong>
+                                        · {escape(comment_date)}
+                                    </div>
+                                    <p>{escape(comment['comment_text'])}</p>
+                                </div>
+                                """,
+                                unsafe_allow_html=True,
+                            )
+                    else:
+                        st.caption("No comments yet. Add the first response.")
+
+                    with st.form(f"community-comment-form-{post_id}", border=False):
+                        comment_text = st.text_input(
+                            "Add a comment",
+                            placeholder="Respond with a question, comparison or practical suggestion…",
+                            max_chars=600,
+                            label_visibility="collapsed",
+                        )
+                        comment_submitted = st.form_submit_button(
+                            "Comment",
+                            use_container_width=True,
+                        )
+                    if comment_submitted:
+                        cleaned_comment = comment_text.strip()
+                        if not cleaned_comment:
+                            st.error("Write a comment before submitting.")
+                        else:
+                            create_community_comment(
+                                post_id,
+                                user_id,
+                                user["name"],
+                                cleaned_comment,
+                            )
+                            _clear_community_interaction_caches()
+                            st.rerun()
 
     with share_tab:
-        available_ids = [mid for mid, m in MODULES.items() if m["status"] == "Available"]
-        default_id = st.session_state.get("community_module") if st.session_state.get("community_module") in available_ids else available_ids[0]
+        available_ids = [
+            module_id
+            for module_id, module in MODULES.items()
+            if module["status"] == "Available"
+        ]
+        default_id = (
+            st.session_state.get("community_module")
+            if st.session_state.get("community_module") in available_ids
+            else available_ids[0]
+        )
         default_index = available_ids.index(default_id)
 
         module_id = st.selectbox(
@@ -2673,11 +2865,17 @@ def page_community(user):
             format_func=lambda mid: MODULES[mid]["short_title"],
             key="community-post-module",
         )
-        topic_options = [None] + [t["id"] for t in learning_topics(MODULES[module_id])]
+        topic_options = [None] + [
+            topic["id"] for topic in learning_topics(MODULES[module_id])
+        ]
         topic_id = st.selectbox(
             "Related lesson (optional)",
             topic_options,
-            format_func=lambda tid: "Whole module / general" if tid is None else topic_by_id(module_id, tid)["title"],
+            format_func=lambda tid: (
+                "Whole module / general"
+                if tid is None
+                else topic_by_id(module_id, tid)["title"]
+            ),
             key="community-post-topic",
         )
         with st.form("community-post-form", border=True):
@@ -2694,11 +2892,62 @@ def page_community(user):
             if not cleaned:
                 st.error("Write something before publishing.")
             else:
-                create_community_post(user["user_id"], user["name"], cleaned, module_id, topic_id)
+                create_community_post(
+                    user_id,
+                    user["name"],
+                    cleaned,
+                    module_id,
+                    topic_id,
+                )
                 _cached_community_posts.clear()
-                st.success("Published to the MOSAIC learning community.")
                 st.session_state.pop("community_module", None)
+                st.success("Published to the MOSAIC learning community.")
+                st.rerun()
 
+    with notification_tab:
+        if not notifications:
+            st.info(
+                "No interactions yet. Reactions and comments on your reflections "
+                "will appear here."
+            )
+        for notification in notifications:
+            is_unread = not str(notification.get("read_at") or "").strip()
+            event_type = notification.get("event_type")
+            detail = notification.get("event_detail")
+            if event_type == "comment":
+                action_text = "commented on your reflection"
+            else:
+                reaction_icons = {
+                    "like": "👍",
+                    "insightful": "💡",
+                    "support": "💚",
+                }
+                reaction_icon = reaction_icons.get(detail, "•")
+                action_text = f"reacted {reaction_icon} to your reflection"
+            post_text = str(notification.get("post_text") or "Reflection unavailable")
+            snippet = post_text if len(post_text) <= 135 else post_text[:132].rstrip() + "…"
+            notification_date = str(notification.get("created_at", ""))[:10]
+            notification_class = "m-notification unread" if is_unread else "m-notification"
+            st.markdown(
+                f"""
+                <div class="{notification_class}">
+                    <p><strong>{escape(notification['actor_name'])}</strong> {escape(action_text)}.</p>
+                    <a href="#community-post-{int(notification['post_id'])}">
+                        {escape(snippet)}
+                    </a>
+                    <div class="meta">{escape(notification_date)}</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+    # Visiting Community is the acknowledgement action: no pop-up is shown.
+    # The current page can still show which items were new; the red badge clears
+    # on the learner's next interaction or navigation.
+    if unread_on_entry:
+        mark_community_notifications_read(user_id)
+        _cached_unread_community_notifications.clear()
+        _cached_community_notifications.clear()
 
 def page_profile(user):
     # ensure_profile already loaded these fields; avoid another transatlantic
