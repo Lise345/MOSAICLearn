@@ -233,6 +233,51 @@ def init_db() -> None:
                 )
                 cur.execute(
                     """
+                    CREATE TABLE IF NOT EXISTS community_reactions (
+                        post_id BIGINT NOT NULL REFERENCES community_posts(post_id) ON DELETE CASCADE,
+                        user_id TEXT NOT NULL,
+                        actor_name TEXT NOT NULL,
+                        reaction TEXT NOT NULL,
+                        created_at TEXT NOT NULL,
+                        PRIMARY KEY (post_id, user_id)
+                    )
+                    """
+                )
+                cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS community_comments (
+                        comment_id BIGSERIAL PRIMARY KEY,
+                        post_id BIGINT NOT NULL REFERENCES community_posts(post_id) ON DELETE CASCADE,
+                        user_id TEXT NOT NULL,
+                        author_name TEXT NOT NULL,
+                        comment_text TEXT NOT NULL,
+                        created_at TEXT NOT NULL
+                    )
+                    """
+                )
+                cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS community_notifications (
+                        notification_id BIGSERIAL PRIMARY KEY,
+                        recipient_user_id TEXT NOT NULL,
+                        actor_user_id TEXT NOT NULL,
+                        actor_name TEXT NOT NULL,
+                        event_type TEXT NOT NULL,
+                        event_detail TEXT DEFAULT '',
+                        post_id BIGINT REFERENCES community_posts(post_id) ON DELETE CASCADE,
+                        created_at TEXT NOT NULL,
+                        read_at TEXT DEFAULT ''
+                    )
+                    """
+                )
+                cur.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_community_comments_post ON community_comments(post_id, comment_id)"
+                )
+                cur.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_community_notifications_recipient ON community_notifications(recipient_user_id, read_at, notification_id)"
+                )
+                cur.execute(
+                    """
                     CREATE TABLE IF NOT EXISTS carousel_content (
                         module_id TEXT NOT NULL,
                         topic_id TEXT NOT NULL,
@@ -325,6 +370,41 @@ def init_db() -> None:
                 post_text TEXT NOT NULL,
                 created_at TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS community_reactions (
+                post_id INTEGER NOT NULL REFERENCES community_posts(post_id) ON DELETE CASCADE,
+                user_id TEXT NOT NULL,
+                actor_name TEXT NOT NULL,
+                reaction TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                PRIMARY KEY (post_id, user_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS community_comments (
+                comment_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                post_id INTEGER NOT NULL REFERENCES community_posts(post_id) ON DELETE CASCADE,
+                user_id TEXT NOT NULL,
+                author_name TEXT NOT NULL,
+                comment_text TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS community_notifications (
+                notification_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                recipient_user_id TEXT NOT NULL,
+                actor_user_id TEXT NOT NULL,
+                actor_name TEXT NOT NULL,
+                event_type TEXT NOT NULL,
+                event_detail TEXT DEFAULT '',
+                post_id INTEGER REFERENCES community_posts(post_id) ON DELETE CASCADE,
+                created_at TEXT NOT NULL,
+                read_at TEXT DEFAULT ''
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_community_comments_post
+                ON community_comments(post_id, comment_id);
+            CREATE INDEX IF NOT EXISTS idx_community_notifications_recipient
+                ON community_notifications(recipient_user_id, read_at, notification_id);
 
             CREATE TABLE IF NOT EXISTS carousel_content (
                 module_id TEXT NOT NULL,
@@ -463,6 +543,31 @@ def record_privacy_acceptance(user_id: str, policy_version: str) -> str:
 def delete_user_account(user_id: str) -> None:
     """Delete one learner account and its user-linked data in a single transaction."""
     with _connect() as conn:
+        # Remove interactions involving the account, including activity on posts
+        # that will disappear with the profile.
+        owned_posts = "SELECT post_id FROM community_posts WHERE user_id=?"
+        conn.execute(
+            _query(
+                f"""DELETE FROM community_notifications
+                    WHERE recipient_user_id=? OR actor_user_id=?
+                       OR post_id IN ({owned_posts})"""
+            ),
+            (user_id, user_id, user_id),
+        )
+        conn.execute(
+            _query(
+                f"""DELETE FROM community_comments
+                    WHERE user_id=? OR post_id IN ({owned_posts})"""
+            ),
+            (user_id, user_id),
+        )
+        conn.execute(
+            _query(
+                f"""DELETE FROM community_reactions
+                    WHERE user_id=? OR post_id IN ({owned_posts})"""
+            ),
+            (user_id, user_id),
+        )
         for table in (
             "topic_progress",
             "quiz_results",
@@ -724,3 +829,211 @@ def list_community_posts(limit: int = 30) -> list[dict]:
             (limit,),
         ).fetchall()
     return [dict(row) for row in rows]
+
+
+ALLOWED_COMMUNITY_REACTIONS = {"like", "insightful", "support"}
+
+
+def toggle_community_reaction(
+    post_id: int,
+    user_id: str,
+    actor_name: str,
+    reaction: str,
+) -> bool:
+    """Toggle one reaction per learner and notify the post author when added."""
+    reaction = str(reaction or "").strip().lower()
+    if reaction not in ALLOWED_COMMUNITY_REACTIONS:
+        raise ValueError("Unsupported community reaction")
+    now = _now()
+    with _connect() as conn:
+        post = _dict(
+            conn.execute(
+                _query("SELECT post_id, user_id FROM community_posts WHERE post_id=?"),
+                (int(post_id),),
+            ).fetchone()
+        )
+        if not post:
+            raise ValueError("Community post does not exist")
+        current = _dict(
+            conn.execute(
+                _query(
+                    "SELECT reaction FROM community_reactions WHERE post_id=? AND user_id=?"
+                ),
+                (int(post_id), user_id),
+            ).fetchone()
+        )
+        if current and current.get("reaction") == reaction:
+            conn.execute(
+                _query("DELETE FROM community_reactions WHERE post_id=? AND user_id=?"),
+                (int(post_id), user_id),
+            )
+            return False
+
+        conn.execute(
+            _query(
+                """
+                INSERT INTO community_reactions(post_id, user_id, actor_name, reaction, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(post_id, user_id) DO UPDATE SET
+                    actor_name=excluded.actor_name,
+                    reaction=excluded.reaction,
+                    created_at=excluded.created_at
+                """
+            ),
+            (int(post_id), user_id, actor_name, reaction, now),
+        )
+        if post["user_id"] != user_id:
+            conn.execute(
+                _query(
+                    """
+                    INSERT INTO community_notifications(
+                        recipient_user_id, actor_user_id, actor_name, event_type,
+                        event_detail, post_id, created_at, read_at
+                    ) VALUES (?, ?, ?, 'reaction', ?, ?, ?, '')
+                    """
+                ),
+                (post["user_id"], user_id, actor_name, reaction, int(post_id), now),
+            )
+    return True
+
+
+def create_community_comment(
+    post_id: int,
+    user_id: str,
+    author_name: str,
+    comment_text: str,
+) -> None:
+    """Add a comment and notify the post author."""
+    cleaned = str(comment_text or "").strip()
+    if not cleaned:
+        raise ValueError("Comment text is required")
+    now = _now()
+    with _connect() as conn:
+        post = _dict(
+            conn.execute(
+                _query("SELECT post_id, user_id FROM community_posts WHERE post_id=?"),
+                (int(post_id),),
+            ).fetchone()
+        )
+        if not post:
+            raise ValueError("Community post does not exist")
+        conn.execute(
+            _query(
+                """
+                INSERT INTO community_comments(
+                    post_id, user_id, author_name, comment_text, created_at
+                ) VALUES (?, ?, ?, ?, ?)
+                """
+            ),
+            (int(post_id), user_id, author_name, cleaned, now),
+        )
+        if post["user_id"] != user_id:
+            conn.execute(
+                _query(
+                    """
+                    INSERT INTO community_notifications(
+                        recipient_user_id, actor_user_id, actor_name, event_type,
+                        event_detail, post_id, created_at, read_at
+                    ) VALUES (?, ?, ?, 'comment', '', ?, ?, '')
+                    """
+                ),
+                (post["user_id"], user_id, author_name, int(post_id), now),
+            )
+
+
+def get_community_activity(post_ids: list[int] | tuple[int, ...], user_id: str) -> dict:
+    """Load reaction totals, the viewer's reactions and comments in bulk."""
+    ids = list(dict.fromkeys(int(post_id) for post_id in post_ids))
+    activity = {
+        "reaction_counts": {},
+        "viewer_reactions": {},
+        "comments": {},
+    }
+    if not ids:
+        return activity
+
+    placeholders = ",".join("?" for _ in ids)
+    with _connect() as conn:
+        count_rows = conn.execute(
+            _query(
+                f"""SELECT post_id, reaction, COUNT(*) AS reaction_count
+                    FROM community_reactions
+                    WHERE post_id IN ({placeholders})
+                    GROUP BY post_id, reaction"""
+            ),
+            tuple(ids),
+        ).fetchall()
+        viewer_rows = conn.execute(
+            _query(
+                f"""SELECT post_id, reaction
+                    FROM community_reactions
+                    WHERE user_id=? AND post_id IN ({placeholders})"""
+            ),
+            (user_id, *ids),
+        ).fetchall()
+        comment_rows = conn.execute(
+            _query(
+                f"""SELECT comment_id, post_id, user_id, author_name, comment_text, created_at
+                    FROM community_comments
+                    WHERE post_id IN ({placeholders})
+                    ORDER BY comment_id ASC"""
+            ),
+            tuple(ids),
+        ).fetchall()
+
+    for row in count_rows:
+        data = dict(row)
+        post_counts = activity["reaction_counts"].setdefault(int(data["post_id"]), {})
+        post_counts[data["reaction"]] = int(data["reaction_count"])
+    for row in viewer_rows:
+        data = dict(row)
+        activity["viewer_reactions"][int(data["post_id"])] = data["reaction"]
+    for row in comment_rows:
+        data = dict(row)
+        activity["comments"].setdefault(int(data["post_id"]), []).append(data)
+    return activity
+
+
+def unread_community_notification_count(user_id: str) -> int:
+    with _connect() as conn:
+        row = conn.execute(
+            _query(
+                """SELECT COUNT(*) AS notification_count
+                   FROM community_notifications
+                   WHERE recipient_user_id=? AND COALESCE(read_at, '')=''"""
+            ),
+            (user_id,),
+        ).fetchone()
+    data = _dict(row) or {}
+    return int(data.get("notification_count") or 0)
+
+
+def list_community_notifications(user_id: str, limit: int = 30) -> list[dict]:
+    limit = max(1, min(int(limit), 100))
+    with _connect() as conn:
+        rows = conn.execute(
+            _query(
+                """
+                SELECT n.*, p.post_text
+                FROM community_notifications n
+                LEFT JOIN community_posts p ON p.post_id=n.post_id
+                WHERE n.recipient_user_id=?
+                ORDER BY n.notification_id DESC
+                LIMIT ?
+                """
+            ),
+            (user_id, limit),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def mark_community_notifications_read(user_id: str) -> None:
+    with _connect() as conn:
+        conn.execute(
+            _query(
+                """UPDATE community_notifications
+                   SET read_at=?
+                   WHERE recipient_user_id=? AND COALESCE(read_at, '')=''"""
+            ),
+            (_now(), user_id),
+        )
