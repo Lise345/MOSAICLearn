@@ -11,7 +11,6 @@ from html import escape
 from urllib.parse import quote
 
 import streamlit as st
-import streamlit.components.v1 as components
 
 try:
     import bleach
@@ -40,14 +39,11 @@ from db import (
     ensure_user,
     get_carousel_content,
     get_community_activity,
-    get_mycelium_state,
     get_progress,
     get_quiz_results,
     get_share,
     get_user,
     init_db,
-    join_mycelium,
-    leave_mycelium,
     list_community_notifications,
     list_community_posts,
     list_published_carousels,
@@ -55,8 +51,6 @@ from db import (
     mark_community_notifications_read,
     publish_carousel_content,
     record_privacy_acceptance,
-    request_mycelium_connection,
-    respond_mycelium_connection,
     save_quiz_result,
     save_carousel_draft,
     save_topic_progress,
@@ -67,23 +61,18 @@ from db import (
 )
 
 APP_DIR = Path(__file__).resolve().parent
-MYCELIUM_COMPONENT_DIR = APP_DIR / "mycelium_component"
-_mycelium_network = components.declare_component(
-    "mosaic_mycelium_network",
-    path=str(MYCELIUM_COMPONENT_DIR),
-)
 ASSETS_DIR = APP_DIR / "assets"
 APPROVED_LOGO = ASSETS_DIR / "mosaic-logo.png"
 PAGE_ICON_FILE = ASSETS_DIR / "page-icon.png"
 TOOL_FILES_DIR = ASSETS_DIR / "tools"
 # Bump this value whenever the notice text changes. Existing accounts will be
 # shown the non-dismissible re-consent dialog before they can continue.
-PRIVACY_POLICY_VERSION = "2026-09-21"
-PRIVACY_POLICY_EFFECTIVE_DATE = "21 September 2026"
+PRIVACY_POLICY_VERSION = "2026-09-17"
+PRIVACY_POLICY_EFFECTIVE_DATE = "17 September 2026"
 # Change this value whenever init_db() gains a migration. It is passed into the
 # cached initializer so Streamlit Cloud cannot reuse a pre-migration cache entry
 # after a hot deployment.
-DATABASE_SCHEMA_VERSION = "2026-09-21-mycelium-v1"
+DATABASE_SCHEMA_VERSION = "2026-09-18-community-v1"
 
 # Prefer a dedicated square favicon, then the approved MOSAIC logo. The globe
 # is retained only as a last-resort fallback when neither image is installed.
@@ -172,16 +161,10 @@ def _cached_community_notifications(user_id: str, limit: int = 30) -> list[dict]
     return list_community_notifications(user_id, limit)
 
 
-@st.cache_data(ttl=20, show_spinner=False)
-def _cached_mycelium_state(user_id: str) -> dict:
-    return get_mycelium_state(user_id)
-
-
 def _clear_community_interaction_caches() -> None:
     _cached_community_activity.clear()
     _cached_unread_community_notifications.clear()
     _cached_community_notifications.clear()
-    _cached_mycelium_state.clear()
 
 
 @st.cache_data(ttl=30, show_spinner=False)
@@ -617,12 +600,6 @@ html, body, [class*="css"] { font-family: Poppins, "Segoe UI", Arial, sans-serif
 .m-notification a { color:var(--m-blue) !important; font-weight:600; text-decoration:none; }
 .m-notification a:hover { text-decoration:underline; }
 .m-notification .meta { color:var(--m-muted); font-size:.72rem; }
-.m-mycelium-optin { margin:.8rem 0 1.1rem; padding:1rem 1.1rem; border:1px solid var(--m-line); border-left:5px solid var(--m-green); border-radius:0 16px 16px 0; background:var(--m-green-10); }
-.m-mycelium-optin h3 { margin:.25rem 0 .35rem; }
-.m-mycelium-optin p { margin:0; color:var(--m-muted); line-height:1.6; }
-.m-mycelium-summary { display:flex; gap:.45rem; flex-wrap:wrap; align-items:baseline; margin:.65rem 0 .8rem; color:var(--m-muted); font-size:.84rem; }
-.m-mycelium-summary strong { color:var(--m-green); font-size:1rem; }
-.m-mycelium-summary span { flex-basis:100%; font-size:.78rem; }
 
 @media (max-width: 820px) {
     .block-container{padding-left:1.25rem;padding-right:1.25rem}
@@ -1063,7 +1040,6 @@ def render_privacy_notice(*, compact: bool = False) -> None:
         - Profile information you choose to provide: professional role, organisation, country or region, and learning interests.
         - Learning activity: completed steps, quick-check results, confidence ratings and private reflections.
         - Content you actively share, such as Community posts and public result summaries.
-        - Optional Mycelium data when you choose to join: membership, connection requests and accepted connections, plus whether you chose to share your email with a specific connection request.
         - Account permissions and, for administrators, content-editing activity.
         - The privacy-notice version you accepted and the time of acceptance.
 
@@ -1077,7 +1053,7 @@ def render_privacy_notice(*, compact: bool = False) -> None:
 
         **Visibility and sharing**
 
-        Profile details, progress, quick-check results and reflections are private to your account and authorised administrators. A Community post becomes visible to other signed-in learners only when you publish it. Joining **Our mycelium** is optional; if you join, your name, organisation and country or region are visible to other opted-in Mycelium members. A connection request is visible only to the requester and intended recipient until it is accepted. Your email address is shared with that recipient only when you explicitly select the email-sharing option for the request. A result summary becomes accessible to anyone with its generated link, but private reflections are excluded.
+        Profile details, progress, quick-check results and reflections are private to your account and authorised administrators. A Community post becomes visible to other signed-in learners only when you publish it. A result summary becomes accessible to anyone with its generated link, but private reflections are excluded.
 
         **Retention and deletion**
 
@@ -2753,21 +2729,9 @@ def page_community(user):
     notification_label = (
         f"Notifications ({unread_on_entry})" if unread_on_entry else "Notifications"
     )
-    section_labels = {
-        "explore": "Explore reflections",
-        "share": "Share your perspective",
-        "mycelium": "Our mycelium",
-        "notifications": notification_label,
-    }
-    section = st.segmented_control(
-        "Community section",
-        list(section_labels),
-        default="explore",
-        format_func=lambda value: section_labels[value],
-        selection_mode="single",
-        key="community-section",
-        label_visibility="collapsed",
-    ) or "explore"
+    browse_tab, share_tab, notification_tab = st.tabs(
+        ["Explore reflections", "Share your perspective", notification_label]
+    )
 
     reaction_choices = [
         ("like", "👍", "Like"),
@@ -2775,7 +2739,7 @@ def page_community(user):
         ("support", "💚", "Support"),
     ]
 
-    if section == "explore":
+    with browse_tab:
         if not posts:
             st.info(
                 "No reflections have been shared yet. Start the conversation with "
@@ -2831,9 +2795,7 @@ def page_community(user):
                             _clear_community_interaction_caches()
                             st.rerun()
                 with reaction_cols[3]:
-                    total_reactions = sum(
-                        int(value) for value in reaction_counts.values()
-                    )
+                    total_reactions = sum(int(value) for value in reaction_counts.values())
                     st.markdown(
                         f"<div class='m-reaction-summary'>{total_reactions} reactions · {len(comments)} comments</div>",
                         unsafe_allow_html=True,
@@ -2883,7 +2845,7 @@ def page_community(user):
                             _clear_community_interaction_caches()
                             st.rerun()
 
-    elif section == "share":
+    with share_tab:
         available_ids = [
             module_id
             for module_id, module in MODULES.items()
@@ -2942,262 +2904,16 @@ def page_community(user):
                 st.success("Published to the MOSAIC learning community.")
                 st.rerun()
 
-    elif section == "mycelium":
-        state = _cached_mycelium_state(user_id)
-        if not state.get("is_member"):
-            st.markdown(
-                """
-                <div class="m-mycelium-optin">
-                    <div class="m-kicker">Optional network</div>
-                    <h3>Join Our mycelium</h3>
-                    <p>Joining makes your name, organisation and country/region visible to other Mycelium members. Connections require an invitation and acceptance. Your email is never shared unless you explicitly tick the email-sharing box on a request.</p>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-            if st.button(
-                "Join Our mycelium",
-                type="primary",
-                key="mycelium-join",
-            ):
-                join_mycelium(user_id)
-                _clear_community_interaction_caches()
-                st.rerun()
-        else:
-            members = state.get("members", [])
-            incoming = state.get("incoming", [])
-            outgoing = state.get("outgoing", [])
-            connected = state.get("connected", [])
-            blocked = set(state.get("blocked_user_ids", []))
-
-            st.markdown(
-                f"""
-                <div class="m-mycelium-summary">
-                    <strong>{len(members)}</strong> members · <strong>{len(connected)}</strong> of your accepted connections
-                    <span>Drag and zoom the network without reloading the page. Drag the + handle on your card onto another learner to invite them.</span>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-
-            if incoming:
-                st.markdown("### Connection requests")
-                for invitation in incoming:
-                    connection_id = int(invitation["connection_id"])
-                    invitation_name = invitation.get("requester_name") or "Learner"
-                    invitation_context = " · ".join(
-                        value
-                        for value in (
-                            invitation.get("organisation") or "",
-                            invitation.get("country") or "",
-                        )
-                        if value
-                    )
-                    st.markdown(
-                        f"**{escape(invitation_name)}**"
-                        + (f"  \n{escape(invitation_context)}" if invitation_context else "")
-                    )
-                    if invitation.get("requester_email"):
-                        st.caption(
-                            f"They chose to share their email with this request: {invitation['requester_email']}"
-                        )
-                    accept_col, decline_col = st.columns(2)
-                    with accept_col:
-                        if st.button(
-                            "Accept",
-                            key=f"mycelium-accept-{connection_id}",
-                            type="primary",
-                            use_container_width=True,
-                        ):
-                            try:
-                                respond_mycelium_connection(
-                                    connection_id,
-                                    user_id,
-                                    user["name"],
-                                    accept=True,
-                                )
-                            except (ValueError, PermissionError) as exc:
-                                st.error(str(exc))
-                            else:
-                                _clear_community_interaction_caches()
-                                st.rerun()
-                    with decline_col:
-                        if st.button(
-                            "Decline",
-                            key=f"mycelium-decline-{connection_id}",
-                            use_container_width=True,
-                        ):
-                            try:
-                                respond_mycelium_connection(
-                                    connection_id,
-                                    user_id,
-                                    user["name"],
-                                    accept=False,
-                                )
-                            except (ValueError, PermissionError) as exc:
-                                st.error(str(exc))
-                            else:
-                                _clear_community_interaction_caches()
-                                st.rerun()
-
-            pending_edges = [
-                {"source": user_id, "target": row["recipient_user_id"]}
-                for row in outgoing
-            ] + [
-                {"source": row["requester_user_id"], "target": user_id}
-                for row in incoming
-            ]
-            network_event = _mycelium_network(
-                members=members,
-                connections=state.get("connections", []),
-                pending=pending_edges,
-                current_user_id=user_id,
-                blocked_user_ids=state.get("blocked_user_ids", []),
-                default=None,
-                key="mycelium-network",
-            )
-            if isinstance(network_event, dict) and network_event.get("type") == "request":
-                nonce = str(network_event.get("nonce") or "")
-                last_nonce_key = "mycelium-last-component-event"
-                if nonce and st.session_state.get(last_nonce_key) != nonce:
-                    st.session_state[last_nonce_key] = nonce
-                    try:
-                        request_mycelium_connection(
-                            user_id,
-                            user["name"],
-                            user.get("email", ""),
-                            str(network_event.get("target_user_id") or ""),
-                            share_email=bool(network_event.get("share_email")),
-                        )
-                    except (ValueError, PermissionError) as exc:
-                        st.error(str(exc))
-                    else:
-                        _clear_community_interaction_caches()
-                        st.rerun()
-
-            st.markdown("### Connect without dragging")
-            eligible_members = [
-                member
-                for member in members
-                if member["user_id"] not in blocked
-            ]
-            if not eligible_members:
-                st.caption(
-                    "Everyone currently visible is already connected with you or has a pending request."
-                )
-            else:
-                member_by_id = {member["user_id"]: member for member in eligible_members}
-                with st.form("mycelium-accessible-request", border=True):
-                    target_user_id = st.selectbox(
-                        "Learner",
-                        list(member_by_id),
-                        format_func=lambda uid: member_by_id[uid].get("name") or "Learner",
-                    )
-                    share_email = st.checkbox(
-                        "Share my email address with this learner as part of the request."
-                    )
-                    send_request = st.form_submit_button(
-                        "Send connection request",
-                        type="primary",
-                    )
-                if send_request:
-                    try:
-                        request_mycelium_connection(
-                            user_id,
-                            user["name"],
-                            user.get("email", ""),
-                            target_user_id,
-                            share_email=share_email,
-                        )
-                    except (ValueError, PermissionError) as exc:
-                        st.error(str(exc))
-                    else:
-                        _clear_community_interaction_caches()
-                        st.rerun()
-
-            detail_a, detail_b = st.columns(2)
-            with detail_a:
-                st.markdown("### Your connections")
-                if not connected:
-                    st.caption("No accepted connections yet.")
-                for connection in connected:
-                    context = " · ".join(
-                        value
-                        for value in (
-                            connection.get("organisation") or "",
-                            connection.get("country") or "",
-                        )
-                        if value
-                    )
-                    st.markdown(f"**{escape(connection.get('name') or 'Learner')}**")
-                    if context:
-                        st.caption(context)
-                    if connection.get("shared_email"):
-                        st.caption(f"Shared email: {connection['shared_email']}")
-            with detail_b:
-                st.markdown("### Pending invitations")
-                if not outgoing:
-                    st.caption("No outgoing requests are waiting for a response.")
-                for request in outgoing:
-                    st.markdown(
-                        f"**{escape(request.get('recipient_name') or 'Learner')}**"
-                    )
-                    st.caption(f"Sent {str(request.get('created_at') or '')[:10]}")
-
-            with st.expander("Mycelium membership & privacy"):
-                st.write(
-                    "Leaving removes you from the Mycelium directory and removes your Mycelium connections and pending invitations. It does not delete your MOSAIC Learn account, learning progress or Community posts."
-                )
-                confirm_leave = st.checkbox(
-                    "I understand that leaving removes my Mycelium connections.",
-                    key="mycelium-leave-confirm",
-                )
-                if st.button(
-                    "Leave Our mycelium",
-                    key="mycelium-leave",
-                    disabled=not confirm_leave,
-                ):
-                    leave_mycelium(user_id)
-                    _clear_community_interaction_caches()
-                    st.rerun()
-
-    elif section == "notifications":
+    with notification_tab:
         if not notifications:
             st.info(
-                "No interactions yet. Reactions, comments and Mycelium invitations will appear here."
+                "No interactions yet. Reactions and comments on your reflections "
+                "will appear here."
             )
         for notification in notifications:
             is_unread = not str(notification.get("read_at") or "").strip()
             event_type = notification.get("event_type")
             detail = notification.get("event_detail")
-            notification_date = str(notification.get("created_at", ""))[:10]
-            notification_class = (
-                "m-notification unread" if is_unread else "m-notification"
-            )
-
-            if event_type == "mycelium_request":
-                st.markdown(
-                    f"""
-                    <div class="{notification_class}">
-                        <p><strong>{escape(notification['actor_name'])}</strong> sent you a Mycelium connection request.</p>
-                        <div class="meta">{escape(notification_date)} · Open <strong>Our mycelium</strong> to respond.</div>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-                continue
-            if event_type == "mycelium_accepted":
-                st.markdown(
-                    f"""
-                    <div class="{notification_class}">
-                        <p><strong>{escape(notification['actor_name'])}</strong> accepted your Mycelium connection request.</p>
-                        <div class="meta">{escape(notification_date)}</div>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-                continue
-
             if event_type == "comment":
                 action_text = "commented on your reflection"
             else:
@@ -3209,19 +2925,14 @@ def page_community(user):
                 reaction_icon = reaction_icons.get(detail, "•")
                 action_text = f"reacted {reaction_icon} to your reflection"
             post_text = str(notification.get("post_text") or "Reflection unavailable")
-            snippet = (
-                post_text
-                if len(post_text) <= 135
-                else post_text[:132].rstrip() + "…"
-            )
-            post_id = notification.get("post_id")
-            if post_id is None:
-                continue
+            snippet = post_text if len(post_text) <= 135 else post_text[:132].rstrip() + "…"
+            notification_date = str(notification.get("created_at", ""))[:10]
+            notification_class = "m-notification unread" if is_unread else "m-notification"
             st.markdown(
                 f"""
                 <div class="{notification_class}">
                     <p><strong>{escape(notification['actor_name'])}</strong> {escape(action_text)}.</p>
-                    <a href="#community-post-{int(post_id)}">
+                    <a href="#community-post-{int(notification['post_id'])}">
                         {escape(snippet)}
                     </a>
                     <div class="meta">{escape(notification_date)}</div>
@@ -3230,14 +2941,13 @@ def page_community(user):
                 unsafe_allow_html=True,
             )
 
-        # Crucial difference from current main: merely browsing Community/Mycelium
-        # does not acknowledge invitations. Opening Notifications does.
-        if unread_on_entry:
-            mark_community_notifications_read(user_id)
-            _cached_unread_community_notifications.clear()
-            _cached_community_notifications.clear()
-            st.rerun()
-
+    # Visiting Community is the acknowledgement action: no pop-up is shown.
+    # The current page can still show which items were new; the red badge clears
+    # on the learner's next interaction or navigation.
+    if unread_on_entry:
+        mark_community_notifications_read(user_id)
+        _cached_unread_community_notifications.clear()
+        _cached_community_notifications.clear()
 
 def page_profile(user):
     # ensure_profile already loaded these fields; avoid another transatlantic
