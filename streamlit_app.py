@@ -594,46 +594,115 @@ html, body, [class*="css"] { font-family: Poppins, "Segoe UI", Arial, sans-serif
 .m-admin-note { border-left:5px solid var(--m-blue); border-radius:0 16px 16px 0; background:var(--m-blue-10); padding:1rem 1.15rem; margin:.8rem 0 1.2rem; }
 .m-admin-note p { margin:.3rem 0 0; color:#4f5965; line-height:1.6; }
 .m-share-card { max-width:760px; border:1px solid var(--m-line); border-radius:18px; padding:1.25rem; background:var(--m-soft); }
-.m-community-hero { border:1px solid var(--m-line); border-radius:22px; padding:clamp(1.4rem,4vw,2.6rem); background:linear-gradient(120deg,var(--m-green-10),#fff 60%,var(--m-lime-10)); margin-bottom:1.15rem; border-top:7px solid var(--m-green); } .m-community-hero h1{margin:.35rem 0 .55rem;font-size:clamp(2rem,4vw,3rem);letter-spacing:-.03em}.m-community-hero p{max-width:760px;color:#50504d;line-height:1.65}.m-post{border:1px solid var(--m-line);border-radius:15px;padding:.95rem 1rem;background:white;margin:.65rem 0}.m-post-meta{color:var(--m-muted);font-size:.76rem;margin-bottom:.42rem}.m-post p{margin:0;white-space:pre-wrap;line-height:1.6}
+.m-community-hero { position:relative; overflow:hidden; margin:0 0 1rem; border:1px solid #d7dfda; border-radius:24px; background:linear-gradient(135deg,#f2f7f4 0%,#fff 55%,#f8f7ee 100%); box-shadow:0 8px 24px rgba(33,72,58,.05); }
+.m-community-hero:after { content:""; position:absolute; width:260px; height:260px; right:-86px; top:-112px; border-radius:46% 54% 58% 42%; background:var(--m-green); opacity:.055; }
+.m-community-hero-grid { display:grid; grid-template-columns:minmax(0,1.3fr) minmax(290px,.7fr); align-items:stretch; position:relative; z-index:1; }
+.m-community-hero-copy { padding:clamp(1.35rem,3vw,2.35rem); }
+.m-community-hero h1 { max-width:760px; margin:.34rem 0 .5rem; font-size:clamp(1.85rem,3.5vw,2.75rem); line-height:1.08; letter-spacing:-.03em; }
+.m-community-hero p { max-width:720px; margin:0; color:#555b57; line-height:1.65; }
+.m-community-snapshot { border-left:1px solid #dce5df; padding:1.25rem; display:flex; flex-direction:column; justify-content:center; gap:.55rem; background:rgba(255,255,255,.46); }
+.m-community-snapshot .label { color:var(--m-wine); text-transform:uppercase; letter-spacing:.1em; font-size:.67rem; font-weight:700; }
+.m-community-snapshot-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:.45rem; }
+.m-community-snapshot-item { padding:.68rem .72rem; border:1px solid #e1e5e1; border-radius:14px; background:rgba(255,255,255,.86); }
+.m-community-snapshot-item strong { display:block; font-size:1.05rem; color:var(--m-green); }
+.m-community-snapshot-item span { display:block; margin-top:.08rem; color:var(--m-muted); font-size:.68rem; line-height:1.25; }
 .m-community-invitation { margin:0 0 1.25rem; }
-.m-community-count { display:inline-flex; align-items:center; gap:.45rem; margin:0 0 .8rem; padding:.38rem .72rem; border-radius:999px; background:var(--m-green-10); color:var(--m-green); font-size:.78rem; font-weight:700; }
-.m-community-prompt-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:.7rem; }
-.m-community-prompt { min-height:132px; box-sizing:border-box; padding:1rem; border:1px solid var(--m-line); border-top:4px solid var(--m-green); border-radius:16px; background:#fff; }
-.m-community-prompt:nth-child(2) { border-top-color:var(--m-blue); }
-.m-community-prompt:nth-child(3) { border-top-color:var(--m-ochre); }
-.m-community-prompt .icon { font-size:1.1rem; color:var(--m-wine); }
-.m-community-prompt h3 { margin:.45rem 0 .3rem; font-size:1rem; }
-.m-community-prompt p { margin:0; color:var(--m-muted); font-size:.84rem; line-height:1.5; }
-.st-key-nav-community button { position:relative !important; padding-right:2.7rem !important; }
-[class*="st-key-community_post_"] { margin:.8rem 0; padding:1rem 1.05rem .85rem; border:1px solid var(--m-line); border-radius:17px; background:#fff; }
+.m-community-section-lead { margin:1.35rem 0 .65rem; display:flex; gap:1rem; align-items:flex-end; justify-content:space-between; }
+.m-community-section-lead h2 { margin:.15rem 0 .15rem; font-size:1.38rem; letter-spacing:-.02em; }
+.m-community-section-lead p { margin:0; color:var(--m-muted); font-size:.88rem; line-height:1.55; max-width:760px; }
+.m-community-nav-row { margin:.15rem 0 1.2rem; }
+[class*="st-key-community-nav-button-"] [data-testid="stButton"] { height:100%; margin:.15rem 0 1.2rem; }
+[class*="st-key-community-nav-button-"] [data-testid="stButton"] > div { height:100%; }
+[class*="st-key-community-nav-button-"] [data-testid="stButton"] button {
+    width:100% !important;
+    min-height:190px !important;
+    height:100% !important;
+    padding:1.05rem 1.08rem .95rem !important;
+    border:1px solid var(--m-line) !important;
+    border-radius:20px !important;
+    background:#fff !important;
+    box-shadow:0 5px 18px rgba(20,38,31,.045) !important;
+    color:var(--m-text) !important;
+    display:flex !important;
+    align-items:flex-start !important;
+    justify-content:flex-start !important;
+    text-align:left !important;
+    transition:transform .16s ease,border-color .16s ease,box-shadow .16s ease,background .16s ease !important;
+}
+[class*="st-key-community-nav-button-"] [data-testid="stButton"] button:hover {
+    transform:translateY(-2px);
+    border-color:#b7c9c0 !important;
+    box-shadow:0 10px 24px rgba(20,38,31,.075) !important;
+}
+[class*="st-key-community-nav-button-"] [data-testid="stButton"] button:focus-visible { outline:3px solid rgba(156,36,56,.24) !important; outline-offset:3px; }
+[class*="st-key-community-nav-button-"] [data-testid="stButton"] button p {
+    margin:0 !important;
+    width:100%;
+    white-space:pre-line !important;
+    text-align:left !important;
+    color:#555b57 !important;
+    font-size:.84rem !important;
+    line-height:1.58 !important;
+}
+[class*="st-key-community-nav-button-"] [data-testid="stButton"] button p strong {
+    display:block;
+    margin:.5rem 0 .45rem;
+    color:var(--m-text);
+    font-size:1.08rem;
+    letter-spacing:-.015em;
+}
+[class*="st-key-community-nav-button-"] [data-testid="stButton"] button[kind="primary"],
+[class*="st-key-community-nav-button-"] [data-testid="stBaseButton-primary"] {
+    border-color:#a9c7b9 !important;
+    background:linear-gradient(145deg,#fff 0%,#f3f8f5 100%) !important;
+    box-shadow:0 7px 22px rgba(21,105,80,.08) !important;
+}
+[class*="st-key-community_post_"] { margin:.75rem 0; padding:1.05rem 1.1rem .95rem; border:1px solid #e1e2de; border-radius:19px; background:#fff; box-shadow:0 3px 12px rgba(60,60,59,.035); }
 [class*="st-key-community_post_"] .m-post { margin:0 0 .55rem; padding:0; border:0; border-radius:0; }
+.m-post-meta { color:var(--m-muted); font-size:.75rem; margin-bottom:.55rem; }
+.m-post p { margin:0; white-space:pre-wrap; line-height:1.65; color:#444441; }
 .m-reaction-summary { color:var(--m-muted); font-size:.76rem; line-height:2.5; text-align:right; }
-.m-comment { margin:.55rem 0; padding:.72rem .8rem; border-left:3px solid var(--m-cyan); border-radius:0 11px 11px 0; background:var(--m-cyan-10); }
+.m-comment { margin:.55rem 0; padding:.76rem .85rem; border-left:3px solid var(--m-cyan); border-radius:0 12px 12px 0; background:var(--m-cyan-10); }
 .m-comment-meta { margin-bottom:.25rem; color:var(--m-muted); font-size:.72rem; }
-.m-comment p { margin:0; font-size:.86rem; line-height:1.5; white-space:pre-wrap; }
-.m-notification { margin:.55rem 0; padding:.8rem .9rem; border:1px solid var(--m-line); border-left:4px solid #c9c9c4; border-radius:0 13px 13px 0; background:#fff; }
-.m-notification.unread { border-left-color:#d6283f; background:#fff8f8; }
+.m-comment p { margin:0; font-size:.86rem; line-height:1.52; white-space:pre-wrap; }
+.m-community-share-shell { margin:1.5rem 0 .7rem; padding:1.15rem 1.2rem; border:1px solid #c9dcd3; border-radius:18px; background:linear-gradient(135deg,var(--m-green-10),#fff 76%); box-shadow:0 4px 14px rgba(21,105,80,.035); }
+.m-community-share-shell h3 { margin:.2rem 0 .32rem; font-size:1.18rem; }
+.m-community-share-shell p { margin:0; color:var(--m-muted); font-size:.86rem; line-height:1.55; }
+.m-notification { margin:.58rem 0; padding:.9rem 1rem; border:1px solid var(--m-line); border-left:4px solid #c9c9c4; border-radius:0 14px 14px 0; background:#fff; box-shadow:0 2px 8px rgba(60,60,59,.025); }
+.m-notification.unread { border-left-color:#d6283f; background:#fff9f9; }
 .m-notification p { margin:0 0 .22rem; line-height:1.5; }
 .m-notification a { color:var(--m-blue) !important; font-weight:600; text-decoration:none; }
 .m-notification a:hover { text-decoration:underline; }
 .m-notification .meta { color:var(--m-muted); font-size:.72rem; }
-.m-mycelium-optin { margin:.8rem 0 1.1rem; padding:1rem 1.1rem; border:1px solid var(--m-line); border-left:5px solid var(--m-green); border-radius:0 16px 16px 0; background:var(--m-green-10); }
+.m-mycelium-optin { margin:.85rem 0 1.1rem; padding:1.1rem 1.2rem; border:1px solid #c9dcd3; border-radius:18px; background:linear-gradient(135deg,var(--m-green-10),#fff 75%); }
 .m-mycelium-optin h3 { margin:.25rem 0 .35rem; }
 .m-mycelium-optin p { margin:0; color:var(--m-muted); line-height:1.6; }
-.m-mycelium-summary { display:flex; gap:.45rem; flex-wrap:wrap; align-items:baseline; margin:.65rem 0 .8rem; color:var(--m-muted); font-size:.84rem; }
-.m-mycelium-summary strong { color:var(--m-green); font-size:1rem; }
-.m-mycelium-summary span { flex-basis:100%; font-size:.78rem; }
+.m-mycelium-intro { margin:0 0 .75rem; padding:1rem 1.05rem; border:1px solid #bfd6cc; border-radius:18px; background:linear-gradient(135deg,var(--m-green-10),#fff 74%); box-shadow:0 3px 12px rgba(21,105,80,.035); }
+.m-mycelium-intro h3 { margin:.18rem 0 .35rem; font-size:1.08rem; }
+.m-mycelium-intro p { margin:0; color:var(--m-muted); font-size:.82rem; line-height:1.55; }
+.m-mycelium-metrics { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:.45rem; margin:.75rem 0 .1rem; }
+.m-mycelium-metric { padding:.62rem .66rem; border:1px solid var(--m-line); border-radius:13px; background:#fff; }
+.m-mycelium-metric strong { display:block; color:var(--m-green); font-size:1rem; }
+.m-mycelium-metric span { display:block; margin-top:.1rem; color:var(--m-muted); font-size:.68rem; line-height:1.3; }
+.m-mycelium-section-label { margin:.1rem 0 .55rem; color:var(--m-wine); font-size:.7rem; font-weight:700; letter-spacing:.08em; text-transform:uppercase; }
+.m-mycelium-person { margin:.45rem 0; padding:.66rem .72rem; border:1px solid var(--m-line); border-radius:13px; background:#fff; }
+.m-mycelium-person strong { display:block; font-size:.86rem; }
+.m-mycelium-person span { display:block; margin-top:.12rem; color:var(--m-muted); font-size:.72rem; line-height:1.35; }
+.m-mycelium-map-heading { margin:.08rem 0 .65rem; padding:.1rem .05rem; }
+.m-mycelium-map-heading strong { display:block; font-size:1.08rem; }
+.m-mycelium-map-heading span { display:block; margin-top:.18rem; color:var(--m-muted); font-size:.78rem; line-height:1.45; }
+[class*="st-key-mycelium_sidebar_"] { border:1px solid var(--m-line); border-radius:18px; padding:.9rem .95rem .6rem; background:#fbfbfa; margin-bottom:.75rem; box-shadow:0 3px 10px rgba(60,60,59,.025); }
 
 @media (max-width: 820px) {
     .block-container{padding-left:1.25rem;padding-right:1.25rem}
     .m-hero{grid-template-columns:1fr}.m-hero-art{min-height:220px}.m-convince-hero{grid-template-columns:1fr}.m-convince-art{min-height:150px}
     .m-building-grid,.m-evidence-grid,.m-tool-steps{grid-template-columns:repeat(2,minmax(0,1fr));}.m-brandtag{display:none}
     .m-theory-card{min-height:290px}.m-theory-inner{max-width:none}
-    .m-practice-feature{grid-template-columns:1fr}.m-practice-media{min-height:145px;max-height:210px}
+    .m-practice-feature{grid-template-columns:1fr}.m-practice-media{min-height:145px;max-height:210px}.m-community-hero-grid{grid-template-columns:1fr}.m-community-snapshot{border-left:0;border-top:1px solid #dce5df}.m-community-snapshot-grid{max-width:520px}
 }
 @media (max-width: 620px) {
     .block-container{padding-top:4.75rem;padding-left:1rem;padding-right:1rem}
-    .m-building-grid,.m-evidence-grid,.m-resource-grid,.m-driver-grid,.m-tool-steps,.m-community-prompt-grid{grid-template-columns:1fr}
+    .m-building-grid,.m-evidence-grid,.m-resource-grid,.m-driver-grid,.m-tool-steps,.m-mycelium-metrics,.m-community-snapshot-grid{grid-template-columns:1fr}
     .m-track-card{min-height:0}.m-module-card{height:auto;min-height:0}.m-start-intro{grid-template-columns:1fr}.m-start-image{min-height:150px}.m-start-choice,.m-glossary-card{min-height:0}.m-phase-header{grid-template-columns:44px minmax(0,1fr)}.m-phase-progress{grid-column:2;justify-self:start}.m-lesson-row{grid-template-columns:38px minmax(0,1fr)}.m-lesson-time{grid-column:2}
     [class*="st-key-path_step_"] [data-testid="stHorizontalBlock"]{gap:.55rem}.m-path-copy .meta{font-size:.63rem}
     .m-theory-card{min-height:0;padding:1.5rem 1.25rem;border-radius:19px}.m-theory-progress{width:78%;margin-bottom:.75rem}
@@ -1247,20 +1316,24 @@ def module_card_html(module_id: str, user_id: str | None = None) -> str:
         progress = ""
         topic_meta = f"{total} learning steps" if total else "Module structure coming soon"
     track_class = module["track"].lower()
-    status_class = "available" if module["status"] == "Available" else "soon"
-    status_text = module["status"]
-    return f"""
-    <div class="m-module-card">
-        <div class="m-module-art {track_class}"></div>
-        <div class="m-module-body">
-            <span class="m-status {status_class}">{escape(status_text)}</span>
-            <div class="m-kicker" style="margin-top:.65rem">{escape(module['track'])}</div>
-            <h3>{escape(module['short_title'])}</h3>
-            <p>{escape(module['description'])}</p>
-            {progress}<div class="m-module-meta"><span>{escape(topic_meta)}</span><span>•</span><span>{module['estimated_minutes']} min</span></div>
-        </div>
-    </div>
-    """
+    status_text = str(module.get("status") or "")
+    status_html = (
+        ""
+        if status_text == "Available"
+        else f'<span class="m-status soon">{escape(status_text)}</span>'
+    )
+    kicker_margin = ".65rem" if status_html else "0"
+    return (
+        f'<div class="m-module-card">'
+        f'<div class="m-module-art {track_class}"></div>'
+        f'<div class="m-module-body">'
+        f'{status_html}'
+        f'<div class="m-kicker" style="margin-top:{kicker_margin}">{escape(module["track"])}</div>'
+        f'<h3>{escape(module["short_title"])}</h3>'
+        f'<p>{escape(module["description"])}</p>'
+        f'{progress}<div class="m-module-meta"><span>{escape(topic_meta)}</span><span>•</span><span>{module["estimated_minutes"]} min</span></div>'
+        f'</div></div>'
+    )
 
 
 def render_sidebar(user: dict | None):
@@ -1385,31 +1458,34 @@ def page_home(user: dict | None):
     cols = st.columns(3)
     tracks = [
         ("Community", "◫", "Share experiences, questions and reflections with other MOSAIC learners.", "community", None),
-        ("Learning", "◎", "Understand the deeper drivers behind current land-use decisions.", "module", "drivers"),
-        ("Empowerment", "↝", "Explore future pathways and return with sharper options for action.", "module", "future-pathways"),
+        ("Learning", "◎", "Understand the deeper drivers behind current land-use decisions.", "catalogue", None),
+        ("Your trajectory", "↝", "Follow your progress and share it with others", "learning", None),
     ]
     for col, (title, icon, text, target_type, target_id) in zip(cols, tracks):
         with col:
             st.markdown(
-                f"<div class='m-track-card {title.lower()}'><div class='m-track-icon' aria-hidden='true'>{icon}</div><h3>{title}</h3><p>{text}</p></div>",
+                f"<div class='m-track-card {title.lower().replace(' ', '-')}'><div class='m-track-icon' aria-hidden='true'>{icon}</div><h3>{title}</h3><p>{text}</p></div>",
                 unsafe_allow_html=True,
             )
+
             if target_type == "community":
-                if st.button("Open community →", key="home-track-community", use_container_width=True):
-                    navigate("community")
+                button_label = "Open community →"
+
+            elif target_type == "catalogue":
+                button_label = "Explore learning modules →"
+
+            elif target_type == "learning":
+                button_label = "Open my learning →"
+
             else:
-                module = MODULES[target_id]
-                if module["status"] == "Available":
-                    button_label = "Open my learning →" if title == "Empowerment" else f"Explore {title.lower()} →"
-                    if st.button(button_label, key=f"home-track-{target_id}", use_container_width=True):
-                        if title == "Learning":
-                            navigate("catalogue")
-                        elif title == "Empowerment":
-                            navigate("learning")
-                        else:
-                            navigate("module", target_id)
-                else:
-                    st.button("Coming soon", key=f"home-track-{target_id}", disabled=True, use_container_width=True)
+                button_label = "Open →"
+
+            if st.button(
+                button_label,
+                key=f"home-track-{target_type}",
+                use_container_width=True,
+            ):
+                navigate(target_type, target_id)
 
     learning_heading = "Continue learning" if user else "Explore the learning modules"
     learning_intro = (
@@ -2704,17 +2780,6 @@ def page_results(user, *, embedded: bool = False):
 
 
 def page_community(user):
-    st.markdown(
-        """
-        <div class='m-community-hero'>
-            <div class='m-kicker'>Community · the MOSAIC mycelium</div>
-            <h1>Turn individual learning into shared knowledge</h1>
-            <p>Share a short experience, question or reflection from a learning module, and browse what other learners are noticing in their own land-use contexts.</p>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
     user_id = user["user_id"]
     posts = _cached_community_posts(40)
     post_ids = tuple(int(post["post_id"]) for post in posts)
@@ -2722,52 +2787,174 @@ def page_community(user):
     unread_on_entry = _cached_unread_community_notifications(user_id)
     notifications = _cached_community_notifications(user_id, 30)
 
+    mycelium_state = _cached_mycelium_state(user_id)
+
     post_count = len(posts)
     reflection_label = "reflection" if post_count == 1 else "reflections"
+    mycelium_member_count = len(mycelium_state.get("members", [])) if mycelium_state.get("is_member") else 0
+    mycelium_request_count = len(mycelium_state.get("incoming", [])) if mycelium_state.get("is_member") else 0
+
     st.markdown(
         f"""
-        <section class="m-community-invitation">
-            <div class="m-community-count">✣ {post_count} {reflection_label} shared so far</div>
-            <div class="m-community-prompt-grid">
-                <article class="m-community-prompt">
-                    <div class="icon" aria-hidden="true">◎</div>
-                    <h3>Share what changed</h3>
-                    <p>Tell others what you tried, what shifted and what you would do differently next time.</p>
-                </article>
-                <article class="m-community-prompt">
-                    <div class="icon" aria-hidden="true">⇄</div>
-                    <h3>Compare contexts</h3>
-                    <p>Notice how the same idea works differently across places, institutions and land-use settings.</p>
-                </article>
-                <article class="m-community-prompt">
-                    <div class="icon" aria-hidden="true">?</div>
-                    <h3>Ask the network</h3>
-                    <p>Bring a practical question or unresolved tension to learners working on related challenges.</p>
-                </article>
+        <div class="m-community-hero">
+            <div class="m-community-hero-grid">
+                <div class="m-community-hero-copy">
+                    <div class="m-kicker">Community · the MOSAIC mycelium</div>
+                    <h1>Turn individual learning into shared knowledge</h1>
+                    <p>Read reflections from other learners, compare contexts, add your own experience, and grow your network across the MOSAIC community.</p>
+                </div>
+                <div class="m-community-snapshot">
+                    <div class="label">Community at a glance</div>
+                    <div class="m-community-snapshot-grid">
+                        <div class="m-community-snapshot-item"><strong>{post_count}</strong><span>{reflection_label}</span></div>
+                        <div class="m-community-snapshot-item"><strong>{mycelium_member_count}</strong><span>Mycelium members</span></div>
+                        <div class="m-community-snapshot-item"><strong>{unread_on_entry}</strong><span>unread updates</span></div>
+                    </div>
+                </div>
             </div>
-        </section>
+        </div>
         """,
         unsafe_allow_html=True,
     )
 
-    notification_label = (
-        f"Notifications ({unread_on_entry})" if unread_on_entry else "Notifications"
+    valid_community_sections = {"explore", "mycelium", "notifications"}
+    if st.session_state.get("community-section") not in valid_community_sections:
+        st.session_state["community-section"] = "explore"
+    section = st.session_state.get("community-section", "explore")
+
+    st.markdown(
+        """
+        <div class="m-community-section-lead">
+            <div>
+                <div class="m-kicker">Choose a space</div>
+                <h2>Community hub</h2>
+                <p>Move between the discussion, the learner network and your private activity updates.</p>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
-    section_labels = {
-        "explore": "Explore reflections",
-        "share": "Share your perspective",
-        "mycelium": "Our mycelium",
-        "notifications": notification_label,
-    }
-    section = st.segmented_control(
-        "Community section",
-        list(section_labels),
-        default="explore",
-        format_func=lambda value: section_labels[value],
-        selection_mode="single",
-        key="community-section",
-        label_visibility="collapsed",
-    ) or "explore"
+
+    nav_cards = [
+        (
+            "explore",
+            "◎",
+            "Comments & reflections",
+            "Read what others are trying, compare contexts, and join the discussion.",
+            f"{post_count} {reflection_label}",
+        ),
+        (
+            "mycelium",
+            "✣",
+            "Our mycelium",
+            "Explore the learner network, make connections, and respond to invitations.",
+            (
+                f"{mycelium_member_count} members · {mycelium_request_count} requests"
+                if mycelium_state.get("is_member")
+                else "Optional learner network"
+            ),
+        ),
+        (
+            "notifications",
+            "◎",
+            "Notifications",
+            "Check replies, reactions, and private Mycelium updates that need your attention.",
+            f"{unread_on_entry} unread" if unread_on_entry else "All caught up",
+        ),
+    ]
+    nav_cols = st.columns(3, gap="large")
+    for nav_col, (target_section, icon, title, description, meta) in zip(nav_cols, nav_cards):
+        with nav_col:
+            active = section == target_section
+            state_label = "OPEN" if active else "VIEW"
+            button_label = (
+                f"{icon}   {state_label}\n\n"
+                f"**{title}**\n\n"
+                f"{description}\n\n"
+                f"• {meta}"
+            )
+            if st.button(
+                button_label,
+                key=f"community-nav-button-{target_section}",
+                type="primary" if active else "secondary",
+                use_container_width=True,
+                help=f"Open {title}",
+            ):
+                st.session_state["community-section"] = target_section
+                st.rerun()
+
+    def render_share_perspective() -> None:
+        available_ids = [
+            module_id
+            for module_id, module in MODULES.items()
+            if module["status"] == "Available"
+        ]
+        if not available_ids:
+            return
+
+        default_id = (
+            st.session_state.get("community_module")
+            if st.session_state.get("community_module") in available_ids
+            else available_ids[0]
+        )
+        default_index = available_ids.index(default_id)
+
+        st.markdown(
+            """
+            <div class="m-community-share-shell">
+                <div class="m-kicker">Add to the conversation</div>
+                <h3>Share your perspective</h3>
+                <p>After reading and responding to others, add your own short reflection, field observation or question to the community.</p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        module_id = st.selectbox(
+            "Related module",
+            available_ids,
+            index=default_index,
+            format_func=lambda mid: MODULES[mid]["short_title"],
+            key="community-post-module",
+        )
+        topic_options = [None] + [
+            topic["id"] for topic in learning_topics(MODULES[module_id])
+        ]
+        topic_id = st.selectbox(
+            "Related lesson (optional)",
+            topic_options,
+            format_func=lambda tid: (
+                "Whole module / general"
+                if tid is None
+                else topic_by_id(module_id, tid)["title"]
+            ),
+            key="community-post-topic",
+        )
+        with st.form("community-post-form", border=True):
+            perspective_text = st.text_area(
+                "What would you like to share?",
+                placeholder="A result you tried, something that surprised you, a question for others, or a short field reflection...",
+                height=135,
+                max_chars=1200,
+            )
+            st.caption("Visible to other learners in the MOSAIC community.")
+            submitted = st.form_submit_button("Publish", type="primary")
+        if submitted:
+            cleaned = perspective_text.strip()
+            if not cleaned:
+                st.error("Write something before publishing.")
+            else:
+                create_community_post(
+                    user_id,
+                    user["name"],
+                    cleaned,
+                    module_id,
+                    topic_id,
+                )
+                _cached_community_posts.clear()
+                st.session_state.pop("community_module", None)
+                st.success("Published to the MOSAIC learning community.")
+                st.rerun()
 
     reaction_choices = [
         ("like", "👍", "Like"),
@@ -2776,6 +2963,18 @@ def page_community(user):
     ]
 
     if section == "explore":
+        st.markdown(
+            """
+            <div class="m-community-section-lead">
+                <div>
+                    <div class="m-kicker">Comments & reflections</div>
+                    <h2>See what the community is learning</h2>
+                    <p>React, ask a follow-up question, compare experiences, or add a practical suggestion to another learner's reflection.</p>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
         if not posts:
             st.info(
                 "No reflections have been shared yet. Start the conversation with "
@@ -2883,74 +3082,28 @@ def page_community(user):
                             _clear_community_interaction_caches()
                             st.rerun()
 
-    elif section == "share":
-        available_ids = [
-            module_id
-            for module_id, module in MODULES.items()
-            if module["status"] == "Available"
-        ]
-        default_id = (
-            st.session_state.get("community_module")
-            if st.session_state.get("community_module") in available_ids
-            else available_ids[0]
-        )
-        default_index = available_ids.index(default_id)
-
-        module_id = st.selectbox(
-            "Related module",
-            available_ids,
-            index=default_index,
-            format_func=lambda mid: MODULES[mid]["short_title"],
-            key="community-post-module",
-        )
-        topic_options = [None] + [
-            topic["id"] for topic in learning_topics(MODULES[module_id])
-        ]
-        topic_id = st.selectbox(
-            "Related lesson (optional)",
-            topic_options,
-            format_func=lambda tid: (
-                "Whole module / general"
-                if tid is None
-                else topic_by_id(module_id, tid)["title"]
-            ),
-            key="community-post-topic",
-        )
-        with st.form("community-post-form", border=True):
-            text = st.text_area(
-                "What would you like to share?",
-                placeholder="A result you tried, something that surprised you, a question for others, or a short field reflection...",
-                height=150,
-                max_chars=1200,
-            )
-            st.caption("Visible to other learners in the MOSAIC community.")
-            submitted = st.form_submit_button("Publish", type="primary")
-        if submitted:
-            cleaned = text.strip()
-            if not cleaned:
-                st.error("Write something before publishing.")
-            else:
-                create_community_post(
-                    user_id,
-                    user["name"],
-                    cleaned,
-                    module_id,
-                    topic_id,
-                )
-                _cached_community_posts.clear()
-                st.session_state.pop("community_module", None)
-                st.success("Published to the MOSAIC learning community.")
-                st.rerun()
+        render_share_perspective()
 
     elif section == "mycelium":
-        state = _cached_mycelium_state(user_id)
+        st.markdown(
+            """
+            <div class="m-community-section-lead">
+                <div>
+                    <div class="m-kicker">Our mycelium</div>
+                    <h2>Grow your learner network</h2>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        state = mycelium_state
         if not state.get("is_member"):
             st.markdown(
                 """
                 <div class="m-mycelium-optin">
                     <div class="m-kicker">Optional network</div>
                     <h3>Join Our mycelium</h3>
-                    <p>Joining makes your name, organisation and country/region visible to other Mycelium members. Connections require an invitation and acceptance. Your email is never shared unless you explicitly tick the email-sharing box on a request.</p>
+                    <p>Join the learner network to discover people working in other places and contexts. Your name, organisation and country/region become visible to other Mycelium members. Every connection still requires an invitation and acceptance, and your email is only shared when you explicitly choose to share it.</p>
                 </div>
                 """,
                 unsafe_allow_html=True,
@@ -2970,76 +3123,6 @@ def page_community(user):
             connected = state.get("connected", [])
             blocked = set(state.get("blocked_user_ids", []))
 
-            st.markdown(
-                f"""
-                <div class="m-mycelium-summary">
-                    <strong>{len(members)}</strong> members · <strong>{len(connected)}</strong> of your accepted connections
-                    <span>Drag and zoom the network without reloading the page. Drag the + handle on your card onto another learner to invite them.</span>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-
-            if incoming:
-                st.markdown("### Connection requests")
-                for invitation in incoming:
-                    connection_id = int(invitation["connection_id"])
-                    invitation_name = invitation.get("requester_name") or "Learner"
-                    invitation_context = " · ".join(
-                        value
-                        for value in (
-                            invitation.get("organisation") or "",
-                            invitation.get("country") or "",
-                        )
-                        if value
-                    )
-                    st.markdown(
-                        f"**{escape(invitation_name)}**"
-                        + (f"  \n{escape(invitation_context)}" if invitation_context else "")
-                    )
-                    if invitation.get("requester_email"):
-                        st.caption(
-                            f"They chose to share their email with this request: {invitation['requester_email']}"
-                        )
-                    accept_col, decline_col = st.columns(2)
-                    with accept_col:
-                        if st.button(
-                            "Accept",
-                            key=f"mycelium-accept-{connection_id}",
-                            type="primary",
-                            use_container_width=True,
-                        ):
-                            try:
-                                respond_mycelium_connection(
-                                    connection_id,
-                                    user_id,
-                                    user["name"],
-                                    accept=True,
-                                )
-                            except (ValueError, PermissionError) as exc:
-                                st.error(str(exc))
-                            else:
-                                _clear_community_interaction_caches()
-                                st.rerun()
-                    with decline_col:
-                        if st.button(
-                            "Decline",
-                            key=f"mycelium-decline-{connection_id}",
-                            use_container_width=True,
-                        ):
-                            try:
-                                respond_mycelium_connection(
-                                    connection_id,
-                                    user_id,
-                                    user["name"],
-                                    accept=False,
-                                )
-                            except (ValueError, PermissionError) as exc:
-                                st.error(str(exc))
-                            else:
-                                _clear_community_interaction_caches()
-                                st.rerun()
-
             pending_edges = [
                 {"source": user_id, "target": row["recipient_user_id"]}
                 for row in outgoing
@@ -3047,15 +3130,227 @@ def page_community(user):
                 {"source": row["requester_user_id"], "target": user_id}
                 for row in incoming
             ]
-            network_event = _mycelium_network(
-                members=members,
-                connections=state.get("connections", []),
-                pending=pending_edges,
-                current_user_id=user_id,
-                blocked_user_ids=state.get("blocked_user_ids", []),
-                default=None,
-                key="mycelium-network",
-            )
+
+            network_col, sidebar_col = st.columns([2.15, 1], gap="large")
+
+            with network_col:
+                st.markdown(
+                    """
+                    <div class="m-mycelium-map-heading">
+                        <strong>Explore the network</strong>
+                        <span>Drag cards to rearrange the map, zoom in or out, and drag the + handle on your card onto another learner to invite them.</span>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+                network_event = _mycelium_network(
+                    members=members,
+                    connections=state.get("connections", []),
+                    pending=pending_edges,
+                    current_user_id=user_id,
+                    blocked_user_ids=state.get("blocked_user_ids", []),
+                    default=None,
+                    key="mycelium-network",
+                )
+
+            with sidebar_col:
+                st.markdown(
+                    f"""
+                    <div class="m-mycelium-intro">
+                        <div class="m-kicker">Your network</div>
+                        <h3>Make a connection</h3>
+                        <p>The map shows the wider Mycelium. Accepted links are visible in the network; invitations stay private to the two learners involved.</p>
+                        <div class="m-mycelium-metrics">
+                            <div class="m-mycelium-metric"><strong>{len(members)}</strong><span>members</span></div>
+                            <div class="m-mycelium-metric"><strong>{len(connected)}</strong><span>connections</span></div>
+                            <div class="m-mycelium-metric"><strong>{len(incoming)}</strong><span>requests</span></div>
+                        </div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+                if incoming:
+                    with st.container(border=True, key="mycelium_sidebar_requests"):
+                        st.markdown(
+                            '<div class="m-mycelium-section-label">New connection requests</div>',
+                            unsafe_allow_html=True,
+                        )
+                        for invitation in incoming:
+                            connection_id = int(invitation["connection_id"])
+                            invitation_name = invitation.get("requester_name") or "Learner"
+                            invitation_context = " · ".join(
+                                value
+                                for value in (
+                                    invitation.get("organisation") or "",
+                                    invitation.get("country") or "",
+                                )
+                                if value
+                            )
+                            st.markdown(
+                                f"""
+                                <div class="m-mycelium-person">
+                                    <strong>{escape(invitation_name)}</strong>
+                                    <span>{escape(invitation_context) if invitation_context else 'MOSAIC learner'}</span>
+                                </div>
+                                """,
+                                unsafe_allow_html=True,
+                            )
+                            if invitation.get("requester_email"):
+                                st.caption(
+                                    f"Shared with this request: {invitation['requester_email']}"
+                                )
+                            accept_col, decline_col = st.columns(2)
+                            with accept_col:
+                                if st.button(
+                                    "Accept",
+                                    key=f"mycelium-accept-{connection_id}",
+                                    type="primary",
+                                    use_container_width=True,
+                                ):
+                                    try:
+                                        respond_mycelium_connection(
+                                            connection_id,
+                                            user_id,
+                                            user["name"],
+                                            accept=True,
+                                        )
+                                    except (ValueError, PermissionError) as exc:
+                                        st.error(str(exc))
+                                    else:
+                                        _clear_community_interaction_caches()
+                                        st.rerun()
+                            with decline_col:
+                                if st.button(
+                                    "Decline",
+                                    key=f"mycelium-decline-{connection_id}",
+                                    use_container_width=True,
+                                ):
+                                    try:
+                                        respond_mycelium_connection(
+                                            connection_id,
+                                            user_id,
+                                            user["name"],
+                                            accept=False,
+                                        )
+                                    except (ValueError, PermissionError) as exc:
+                                        st.error(str(exc))
+                                    else:
+                                        _clear_community_interaction_caches()
+                                        st.rerun()
+
+                eligible_members = [
+                    member
+                    for member in members
+                    if member["user_id"] not in blocked
+                ]
+                with st.container(border=True, key="mycelium_sidebar_invite"):
+                    st.markdown(
+                        '<div class="m-mycelium-section-label">Invite a learner</div>',
+                        unsafe_allow_html=True,
+                    )
+                    if not eligible_members:
+                        st.caption(
+                            "Everyone currently visible is already connected with you or has a pending request."
+                        )
+                    else:
+                        member_by_id = {
+                            member["user_id"]: member for member in eligible_members
+                        }
+                        with st.form("mycelium-accessible-request", border=False):
+                            target_user_id = st.selectbox(
+                                "Learner",
+                                list(member_by_id),
+                                format_func=lambda uid: member_by_id[uid].get("name")
+                                or "Learner",
+                            )
+                            share_email = st.checkbox(
+                                "Share my email with this learner."
+                            )
+                            send_request = st.form_submit_button(
+                                "Send connection request",
+                                type="primary",
+                                use_container_width=True,
+                            )
+                        if send_request:
+                            try:
+                                request_mycelium_connection(
+                                    user_id,
+                                    user["name"],
+                                    user.get("email", ""),
+                                    target_user_id,
+                                    share_email=share_email,
+                                )
+                            except (ValueError, PermissionError) as exc:
+                                st.error(str(exc))
+                            else:
+                                _clear_community_interaction_caches()
+                                st.rerun()
+
+                with st.container(border=True, key="mycelium_sidebar_network"):
+                    st.markdown(
+                        '<div class="m-mycelium-section-label">Connections</div>',
+                        unsafe_allow_html=True,
+                    )
+                    if not connected:
+                        st.caption("No accepted connections yet.")
+                    for connection in connected:
+                        context = " · ".join(
+                            value
+                            for value in (
+                                connection.get("organisation") or "",
+                                connection.get("country") or "",
+                            )
+                            if value
+                        )
+                        email_note = (
+                            f" · {connection['shared_email']}"
+                            if connection.get("shared_email")
+                            else ""
+                        )
+                        st.markdown(
+                            f"""
+                            <div class="m-mycelium-person">
+                                <strong>{escape(connection.get('name') or 'Learner')}</strong>
+                                <span>{escape(context) if context else 'MOSAIC learner'}{escape(email_note)}</span>
+                            </div>
+                            """,
+                            unsafe_allow_html=True,
+                        )
+
+                    if outgoing:
+                        st.markdown(
+                            '<div class="m-mycelium-section-label" style="margin-top:.8rem">Waiting for a response</div>',
+                            unsafe_allow_html=True,
+                        )
+                        for request in outgoing:
+                            st.markdown(
+                                f"""
+                                <div class="m-mycelium-person">
+                                    <strong>{escape(request.get('recipient_name') or 'Learner')}</strong>
+                                    <span>Request sent {escape(str(request.get('created_at') or '')[:10])}</span>
+                                </div>
+                                """,
+                                unsafe_allow_html=True,
+                            )
+
+                with st.expander("Membership & privacy"):
+                    st.write(
+                        "Leaving removes you from the Mycelium directory and removes your Mycelium connections and pending invitations. It does not delete your MOSAIC Learn account, learning progress or Community posts."
+                    )
+                    confirm_leave = st.checkbox(
+                        "I understand that leaving removes my Mycelium connections.",
+                        key="mycelium-leave-confirm",
+                    )
+                    if st.button(
+                        "Leave Our mycelium",
+                        key="mycelium-leave",
+                        disabled=not confirm_leave,
+                    ):
+                        leave_mycelium(user_id)
+                        _clear_community_interaction_caches()
+                        st.rerun()
+
             if isinstance(network_event, dict) and network_event.get("type") == "request":
                 nonce = str(network_event.get("nonce") or "")
                 last_nonce_key = "mycelium-last-component-event"
@@ -3075,93 +3370,19 @@ def page_community(user):
                         _clear_community_interaction_caches()
                         st.rerun()
 
-            st.markdown("### Connect without dragging")
-            eligible_members = [
-                member
-                for member in members
-                if member["user_id"] not in blocked
-            ]
-            if not eligible_members:
-                st.caption(
-                    "Everyone currently visible is already connected with you or has a pending request."
-                )
-            else:
-                member_by_id = {member["user_id"]: member for member in eligible_members}
-                with st.form("mycelium-accessible-request", border=True):
-                    target_user_id = st.selectbox(
-                        "Learner",
-                        list(member_by_id),
-                        format_func=lambda uid: member_by_id[uid].get("name") or "Learner",
-                    )
-                    share_email = st.checkbox(
-                        "Share my email address with this learner as part of the request."
-                    )
-                    send_request = st.form_submit_button(
-                        "Send connection request",
-                        type="primary",
-                    )
-                if send_request:
-                    try:
-                        request_mycelium_connection(
-                            user_id,
-                            user["name"],
-                            user.get("email", ""),
-                            target_user_id,
-                            share_email=share_email,
-                        )
-                    except (ValueError, PermissionError) as exc:
-                        st.error(str(exc))
-                    else:
-                        _clear_community_interaction_caches()
-                        st.rerun()
-
-            detail_a, detail_b = st.columns(2)
-            with detail_a:
-                st.markdown("### Your connections")
-                if not connected:
-                    st.caption("No accepted connections yet.")
-                for connection in connected:
-                    context = " · ".join(
-                        value
-                        for value in (
-                            connection.get("organisation") or "",
-                            connection.get("country") or "",
-                        )
-                        if value
-                    )
-                    st.markdown(f"**{escape(connection.get('name') or 'Learner')}**")
-                    if context:
-                        st.caption(context)
-                    if connection.get("shared_email"):
-                        st.caption(f"Shared email: {connection['shared_email']}")
-            with detail_b:
-                st.markdown("### Pending invitations")
-                if not outgoing:
-                    st.caption("No outgoing requests are waiting for a response.")
-                for request in outgoing:
-                    st.markdown(
-                        f"**{escape(request.get('recipient_name') or 'Learner')}**"
-                    )
-                    st.caption(f"Sent {str(request.get('created_at') or '')[:10]}")
-
-            with st.expander("Mycelium membership & privacy"):
-                st.write(
-                    "Leaving removes you from the Mycelium directory and removes your Mycelium connections and pending invitations. It does not delete your MOSAIC Learn account, learning progress or Community posts."
-                )
-                confirm_leave = st.checkbox(
-                    "I understand that leaving removes my Mycelium connections.",
-                    key="mycelium-leave-confirm",
-                )
-                if st.button(
-                    "Leave Our mycelium",
-                    key="mycelium-leave",
-                    disabled=not confirm_leave,
-                ):
-                    leave_mycelium(user_id)
-                    _clear_community_interaction_caches()
-                    st.rerun()
-
     elif section == "notifications":
+        st.markdown(
+            """
+            <div class="m-community-section-lead">
+                <div>
+                    <div class="m-kicker">Notifications</div>
+                    <h2>Your community activity</h2>
+                    <p>Replies, reactions, and Mycelium invitations appear here so you can quickly see what needs your attention.</p>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
         if not notifications:
             st.info(
                 "No interactions yet. Reactions, comments and Mycelium invitations will appear here."

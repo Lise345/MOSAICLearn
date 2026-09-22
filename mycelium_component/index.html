@@ -17,12 +17,14 @@ body{margin:0;font-family:Poppins,system-ui,-apple-system,BlinkMacSystemFont,"Se
 .legend i{display:inline-block;width:22px;height:0;border-top:2px solid #9da6a0}
 .legend i.pending{border-top-style:dashed;border-top-color:var(--wine)}
 .help{font-size:12px;color:var(--muted)}
-.viewport{position:relative;width:100%;height:520px;overflow:hidden;border:1px solid var(--line);border-radius:18px;background:linear-gradient(145deg,#fff,#f8faf8);touch-action:none;user-select:none}
+.viewport{position:relative;width:100%;height:520px;overflow:hidden;border:1px solid #6d5547;border-radius:18px;background-color:#4b372e;background-image:radial-gradient(circle at 18px 22px,rgba(255,255,255,.055) 0 2px,transparent 2.3px),radial-gradient(circle at 76px 58px,rgba(0,0,0,.14) 0 3px,transparent 3.4px),radial-gradient(circle at 128px 34px,rgba(255,235,210,.04) 0 2.5px,transparent 2.8px),linear-gradient(180deg,#60493c 0%,#4b372e 58%,#392920 100%);background-size:150px 100px,170px 120px,190px 135px,100% 100%;touch-action:none;user-select:none;isolation:isolate}
 .viewport:focus{outline:3px solid rgba(13,79,158,.22);outline-offset:2px}
-.scene{position:absolute;left:0;top:0;transform-origin:0 0;width:1200px;height:720px}
+.mushroom-layer{position:absolute;inset:0;z-index:0;pointer-events:none;overflow:hidden;border-radius:18px}
+.mushroom-decoration{position:absolute;display:block;object-fit:contain;mix-blend-mode:multiply;opacity:.14;filter:saturate(.82) contrast(.96)}
+.scene{position:absolute;left:0;top:0;transform-origin:0 0;width:1200px;height:720px;z-index:1}
 svg.edges{position:absolute;inset:0;width:1200px;height:720px;overflow:visible;pointer-events:none}
-.edge{stroke:#a9b0ac;stroke-width:2;opacity:.78;vector-effect:non-scaling-stroke}
-.edge.me{stroke:var(--green);stroke-width:3}
+.edge{stroke:#fff;stroke-width:2.2;opacity:.88;vector-effect:non-scaling-stroke}
+.edge.me{stroke:#fff;stroke-width:3.2;opacity:1}
 .edge.pending{stroke:var(--wine);stroke-dasharray:7 7;stroke-width:2.2}
 .edge.drag{stroke:var(--blue);stroke-dasharray:5 5;stroke-width:2.2}
 .node{position:absolute;width:150px;min-height:72px;padding:10px 12px 10px 46px;border:1px solid #d4d8d5;border-radius:16px;background:#fff;box-shadow:0 2px 8px rgba(40,50,45,.08);cursor:grab;transform:translate(-50%,-50%);touch-action:none}
@@ -65,9 +67,10 @@ svg.edges{position:absolute;inset:0;width:1200px;height:720px;overflow:visible;p
     <div class="legend" aria-label="Network legend">
       <span><i></i> connection</span><span><i class="pending"></i> your pending request</span>
     </div>
-    <div class="help">Drag cards to rearrange · drag the + handle to another learner · wheel or buttons to zoom</div>
+    <div class="help">Drag cards to rearrange · drag the + handle to another learner · wheel/pinch to zoom</div>
   </div>
   <div id="viewport" class="viewport" tabindex="0" aria-label="Interactive Mycelium network">
+    <div id="mushroomLayer" class="mushroom-layer" aria-hidden="true"></div>
     <div id="scene" class="scene">
       <svg id="edges" class="edges" viewBox="0 0 1200 720" preserveAspectRatio="none" aria-hidden="true"></svg>
       <div id="nodes"></div>
@@ -102,6 +105,7 @@ svg.edges{position:absolute;inset:0;width:1200px;height:720px;overflow:visible;p
   const setHeight=()=>send(SET_HEIGHT,{height:document.documentElement.scrollHeight});
 
   const viewport=document.getElementById("viewport");
+  const mushroomLayer=document.getElementById("mushroomLayer");
   const scene=document.getElementById("scene");
   const nodesLayer=document.getElementById("nodes");
   const edgesSvg=document.getElementById("edges");
@@ -117,6 +121,27 @@ svg.edges{position:absolute;inset:0;width:1200px;height:720px;overflow:visible;p
   let nodeEls=new Map();
   let scale=1, panX=0, panY=0;
   let draggingNode=null, draggingLink=null, panning=null, pinch=null, selectedTarget=null;
+
+  function placeMushrooms(){
+    if(!mushroomLayer || mushroomLayer.childElementCount) return;
+    const count=7;
+    for(let i=0;i<count;i++){
+      const img=document.createElement("img");
+      img.src="mushroom.png";
+      img.alt="";
+      img.className="mushroom-decoration";
+      const size=34+Math.random()*34;
+      const x=3+Math.random()*90;
+      const y=5+Math.random()*84;
+      img.style.width=`${size}px`;
+      img.style.height=`${size}px`;
+      img.style.left=`${x}%`;
+      img.style.top=`${y}%`;
+      img.style.transform=`rotate(${-18+Math.random()*36}deg)`;
+      img.style.opacity=String(.09+Math.random()*.09);
+      mushroomLayer.appendChild(img);
+    }
+  }
 
   function initials(name){
     return String(name||"?").split(/\s+/).filter(Boolean).slice(0,2).map(s=>s[0].toUpperCase()).join("")||"?";
@@ -265,6 +290,7 @@ svg.edges{position:absolute;inset:0;width:1200px;height:720px;overflow:visible;p
     [...positions.keys()].forEach(id=>{if(!valid.has(id))positions.delete(id);});
     renderNodes();window.setTimeout(()=>{fitView();setHeight();},0);
   });
+  placeMushrooms();
   send(READY,{apiVersion:1});
   window.setTimeout(setHeight,0);
 })();
