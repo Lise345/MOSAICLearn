@@ -1457,14 +1457,18 @@ def page_home(user: dict | None):
     st.markdown("<div class='m-section-title'><h2>Find your starting point</h2><p>The MOSAIC learning loop can move between collaboration, understanding and future action.</p></div>", unsafe_allow_html=True)
     cols = st.columns(3)
     tracks = [
-        ("Community", "◫", "Share experiences, questions and reflections with other MOSAIC learners.", "community", None),
-        ("Learning", "◎", "Understand the deeper drivers behind current land-use decisions.", "catalogue", None),
-        ("Your trajectory", "↝", "Follow your progress and share it with others", "learning", None),
+        ("Community", "◫", "Share experiences, questions and reflections with other MOSAIC learners.", "community", None, "community"),
+        ("Learning", "◎", "Understand the deeper drivers behind current land-use decisions.", "catalogue", None, "learning"),
+        ("Your trajectory", "↝", "Follow your progress and share it with others", "learning", None, "empowerment"),
     ]
-    for col, (title, icon, text, target_type, target_id) in zip(cols, tracks):
+    for col, (title, icon, text, target_type, target_id, style_class) in zip(cols, tracks):
         with col:
             st.markdown(
-                f"<div class='m-track-card {title.lower().replace(' ', '-')}'><div class='m-track-icon' aria-hidden='true'>{icon}</div><h3>{title}</h3><p>{text}</p></div>",
+                f"<div class='m-track-card {style_class}'>"
+                f"<div class='m-track-icon' aria-hidden='true'>{icon}</div>"
+                f"<h3>{title}</h3>"
+                f"<p>{text}</p>"
+                f"</div>",
                 unsafe_allow_html=True,
             )
 
