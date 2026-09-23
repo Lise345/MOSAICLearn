@@ -26,6 +26,33 @@ _DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 _DATABASE_POOL = None
 _POOL_LOCK = Lock()
 
+# The Streamlit backend is the only supported database client. These tables live
+# in Supabase's public schema for PostgreSQL compatibility, but they must not be
+# directly readable or writable through PostgREST's anon/authenticated roles.
+# RLS is enabled without FORCE ROW LEVEL SECURITY so the table owner used by the
+# server-side DATABASE_URL can continue to run the existing backend queries.
+SERVER_ONLY_PUBLIC_TABLES = (
+    "users",
+    "privacy_consents",
+    "topic_progress",
+    "quiz_results",
+    "shares",
+    "community_posts",
+    "community_reactions",
+    "community_comments",
+    "community_notifications",
+    "mycelium_memberships",
+    "mycelium_connections",
+    "carousel_content",
+    "carousel_revisions",
+    "cms_modules",
+    "cms_lessons",
+    "cms_tools",
+    "cms_resource_files",
+    "learning_content_revisions",
+)
+POSTGREST_CLIENT_ROLES = ("anon", "authenticated")
+
 
 def configure_database(database_url: str | None = None) -> None:
     """Select the persistent database backend.
@@ -130,6 +157,134 @@ def _sqlite_add_missing_user_columns(conn) -> None:
     for column, definition in additions.items():
         if column not in existing:
             conn.execute(f"ALTER TABLE users ADD COLUMN {column} {definition}")
+
+
+def _existing_postgres_roles(cur, role_names: tuple[str, ...]) -> set[str]:
+    """Return the requested PostgreSQL roles that exist on this server."""
+    cur.execute(
+        "SELECT rolname FROM pg_roles WHERE rolname = ANY(%s)",
+        (list(role_names),),
+    )
+    return {str(row["rolname"]) for row in cur.fetchall()}
+
+
+def _harden_postgres_public_tables(cur) -> None:
+    """Keep app-managed public tables server-only when PostgREST is enabled.
+
+    Supabase exposes the public schema through PostgREST. MOSAIC Learn does not
+    use browser-side Supabase table access; all reads and writes go through the
+    server-side PostgreSQL DATABASE_URL. Enabling RLS with no client policies is
+    therefore intentional: PostgREST clients get no rows, while the table owner
+    used by the backend keeps its normal PostgreSQL access.
+    """
+    existing_roles = _existing_postgres_roles(cur, POSTGREST_CLIENT_ROLES)
+
+    for table in SERVER_ONLY_PUBLIC_TABLES:
+        # Table names are fixed application constants, not user input.
+        qualified = f'public."{table}"'
+        cur.execute(f"ALTER TABLE {qualified} ENABLE ROW LEVEL SECURITY")
+        cur.execute(f"REVOKE ALL PRIVILEGES ON TABLE {qualified} FROM PUBLIC")
+        for role in existing_roles:
+            cur.execute(
+                f'REVOKE ALL PRIVILEGES ON TABLE {qualified} FROM "{role}"'
+            )
+
+    # Prevent newly created app tables/sequences from inheriting broad API-role
+    # privileges from this database owner. This only changes defaults for future
+    # objects created by the current role.
+    cur.execute(
+        "ALTER DEFAULT PRIVILEGES IN SCHEMA public "
+        "REVOKE ALL ON TABLES FROM PUBLIC"
+    )
+    cur.execute(
+        "ALTER DEFAULT PRIVILEGES IN SCHEMA public "
+        "REVOKE ALL ON SEQUENCES FROM PUBLIC"
+    )
+    for role in existing_roles:
+        cur.execute(
+            f'ALTER DEFAULT PRIVILEGES IN SCHEMA public '
+            f'REVOKE ALL ON TABLES FROM "{role}"'
+        )
+        cur.execute(
+            f'ALTER DEFAULT PRIVILEGES IN SCHEMA public '
+            f'REVOKE ALL ON SEQUENCES FROM "{role}"'
+        )
+
+
+def postgres_security_status() -> dict:
+    """Return whether server-only public tables are protected from PostgREST.
+
+    This is intentionally a startup check rather than an authentication policy:
+    user identity in MOSAIC Learn comes from Streamlit/OIDC and does not map to
+    Supabase auth.uid().
+    """
+    if database_backend() != "postgres":
+        return {"backend": "sqlite", "ok": True, "tables": {}}
+
+    report: dict[str, dict] = {}
+    with _connect() as conn:
+        with conn.cursor() as cur:
+            existing_roles = _existing_postgres_roles(cur, POSTGREST_CLIENT_ROLES)
+            for table in SERVER_ONLY_PUBLIC_TABLES:
+                cur.execute(
+                    """
+                    SELECT c.relrowsecurity AS rls_enabled
+                    FROM pg_class c
+                    JOIN pg_namespace n ON n.oid = c.relnamespace
+                    WHERE n.nspname='public' AND c.relname=%s AND c.relkind='r'
+                    """,
+                    (table,),
+                )
+                row = cur.fetchone()
+                rls_enabled = bool(row and row["rls_enabled"])
+                role_access: dict[str, bool] = {}
+                for role in sorted(existing_roles):
+                    qualified = f"public.{table}"
+                    cur.execute(
+                        """
+                        SELECT
+                            has_table_privilege(%s, %s, 'SELECT') OR
+                            has_table_privilege(%s, %s, 'INSERT') OR
+                            has_table_privilege(%s, %s, 'UPDATE') OR
+                            has_table_privilege(%s, %s, 'DELETE') AS has_dml
+                        """,
+                        (
+                            role, qualified, role, qualified,
+                            role, qualified, role, qualified,
+                        ),
+                    )
+                    access_row = cur.fetchone()
+                    role_access[role] = bool(access_row and access_row["has_dml"])
+                report[table] = {
+                    "rls_enabled": rls_enabled,
+                    "postgrest_role_access": role_access,
+                }
+
+    ok = all(
+        item["rls_enabled"]
+        and not any(item["postgrest_role_access"].values())
+        for item in report.values()
+    )
+    return {"backend": "postgres", "ok": ok, "tables": report}
+
+
+def assert_postgres_security_hardened() -> None:
+    """Fail closed if a production PostgreSQL table remains API-exposed."""
+    status = postgres_security_status()
+    if status["backend"] != "postgres" or status["ok"]:
+        return
+    insecure = [
+        table
+        for table, item in status["tables"].items()
+        if (
+            not item["rls_enabled"]
+            or any(item["postgrest_role_access"].values())
+        )
+    ]
+    raise RuntimeError(
+        "PostgreSQL security hardening is incomplete for: "
+        + ", ".join(insecure)
+    )
 
 
 def init_db() -> None:
@@ -332,6 +487,90 @@ def init_db() -> None:
                     )
                     """
                 )
+                cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS cms_modules (
+                        module_id TEXT PRIMARY KEY,
+                        draft_json TEXT NOT NULL DEFAULT '',
+                        published_json TEXT NOT NULL DEFAULT '',
+                        sort_order INTEGER NOT NULL DEFAULT 0,
+                        archived INTEGER NOT NULL DEFAULT 0,
+                        updated_by TEXT DEFAULT '',
+                        updated_at TEXT DEFAULT '',
+                        published_at TEXT DEFAULT ''
+                    )
+                    """
+                )
+                cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS cms_lessons (
+                        module_id TEXT NOT NULL,
+                        lesson_id TEXT NOT NULL,
+                        draft_json TEXT NOT NULL DEFAULT '',
+                        published_json TEXT NOT NULL DEFAULT '',
+                        sort_order INTEGER NOT NULL DEFAULT 0,
+                        archived INTEGER NOT NULL DEFAULT 0,
+                        updated_by TEXT DEFAULT '',
+                        updated_at TEXT DEFAULT '',
+                        published_at TEXT DEFAULT '',
+                        PRIMARY KEY (module_id, lesson_id)
+                    )
+                    """
+                )
+                cur.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_cms_lessons_module ON cms_lessons(module_id, sort_order, lesson_id)"
+                )
+                cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS learning_content_revisions (
+                        revision_id BIGSERIAL PRIMARY KEY,
+                        content_type TEXT NOT NULL,
+                        module_id TEXT NOT NULL,
+                        lesson_id TEXT DEFAULT '',
+                        content_json TEXT NOT NULL,
+                        published_by TEXT DEFAULT '',
+                        published_at TEXT NOT NULL
+                    )
+                    """
+                )
+                cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS cms_tools (
+                        tool_id TEXT PRIMARY KEY,
+                        draft_json TEXT NOT NULL DEFAULT '',
+                        published_json TEXT NOT NULL DEFAULT '',
+                        sort_order INTEGER NOT NULL DEFAULT 0,
+                        archived INTEGER NOT NULL DEFAULT 0,
+                        updated_by TEXT DEFAULT '',
+                        updated_at TEXT DEFAULT '',
+                        published_at TEXT DEFAULT ''
+                    )
+                    """
+                )
+                cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS cms_resource_files (
+                        resource_id TEXT PRIMARY KEY,
+                        scope_type TEXT NOT NULL,
+                        scope_id TEXT NOT NULL,
+                        module_id TEXT DEFAULT '',
+                        resource_kind TEXT DEFAULT 'File',
+                        title TEXT NOT NULL,
+                        description TEXT DEFAULT '',
+                        file_name TEXT NOT NULL,
+                        mime_type TEXT NOT NULL,
+                        file_data BYTEA NOT NULL,
+                        sort_order INTEGER NOT NULL DEFAULT 0,
+                        archived INTEGER NOT NULL DEFAULT 0,
+                        updated_by TEXT DEFAULT '',
+                        updated_at TEXT NOT NULL
+                    )
+                    """
+                )
+                cur.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_cms_resource_scope ON cms_resource_files(scope_type, scope_id, archived, sort_order, resource_id)"
+                )
+                _harden_postgres_public_tables(cur)
         return
 
     with _connect() as conn:
@@ -478,6 +717,74 @@ def init_db() -> None:
                 published_by TEXT DEFAULT '',
                 published_at TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS cms_modules (
+                module_id TEXT PRIMARY KEY,
+                draft_json TEXT NOT NULL DEFAULT '',
+                published_json TEXT NOT NULL DEFAULT '',
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                archived INTEGER NOT NULL DEFAULT 0,
+                updated_by TEXT DEFAULT '',
+                updated_at TEXT DEFAULT '',
+                published_at TEXT DEFAULT ''
+            );
+
+            CREATE TABLE IF NOT EXISTS cms_lessons (
+                module_id TEXT NOT NULL,
+                lesson_id TEXT NOT NULL,
+                draft_json TEXT NOT NULL DEFAULT '',
+                published_json TEXT NOT NULL DEFAULT '',
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                archived INTEGER NOT NULL DEFAULT 0,
+                updated_by TEXT DEFAULT '',
+                updated_at TEXT DEFAULT '',
+                published_at TEXT DEFAULT '',
+                PRIMARY KEY (module_id, lesson_id)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_cms_lessons_module
+                ON cms_lessons(module_id, sort_order, lesson_id);
+
+            CREATE TABLE IF NOT EXISTS learning_content_revisions (
+                revision_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                content_type TEXT NOT NULL,
+                module_id TEXT NOT NULL,
+                lesson_id TEXT DEFAULT '',
+                content_json TEXT NOT NULL,
+                published_by TEXT DEFAULT '',
+                published_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS cms_tools (
+                tool_id TEXT PRIMARY KEY,
+                draft_json TEXT NOT NULL DEFAULT '',
+                published_json TEXT NOT NULL DEFAULT '',
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                archived INTEGER NOT NULL DEFAULT 0,
+                updated_by TEXT DEFAULT '',
+                updated_at TEXT DEFAULT '',
+                published_at TEXT DEFAULT ''
+            );
+
+            CREATE TABLE IF NOT EXISTS cms_resource_files (
+                resource_id TEXT PRIMARY KEY,
+                scope_type TEXT NOT NULL,
+                scope_id TEXT NOT NULL,
+                module_id TEXT DEFAULT '',
+                resource_kind TEXT DEFAULT 'File',
+                title TEXT NOT NULL,
+                description TEXT DEFAULT '',
+                file_name TEXT NOT NULL,
+                mime_type TEXT NOT NULL,
+                file_data BLOB NOT NULL,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                archived INTEGER NOT NULL DEFAULT 0,
+                updated_by TEXT DEFAULT '',
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_cms_resource_scope
+                ON cms_resource_files(scope_type, scope_id, archived, sort_order, resource_id);
             """
         )
         _sqlite_add_missing_user_columns(conn)
@@ -652,6 +959,26 @@ def delete_user_account(user_id: str) -> None:
             _query("UPDATE carousel_revisions SET published_by='' WHERE published_by=?"),
             (user_id,),
         )
+        conn.execute(
+            _query("UPDATE cms_modules SET updated_by='' WHERE updated_by=?"),
+            (user_id,),
+        )
+        conn.execute(
+            _query("UPDATE cms_lessons SET updated_by='' WHERE updated_by=?"),
+            (user_id,),
+        )
+        conn.execute(
+            _query("UPDATE cms_tools SET updated_by='' WHERE updated_by=?"),
+            (user_id,),
+        )
+        conn.execute(
+            _query("UPDATE cms_resource_files SET updated_by='' WHERE updated_by=?"),
+            (user_id,),
+        )
+        conn.execute(
+            _query("UPDATE learning_content_revisions SET published_by='' WHERE published_by=?"),
+            (user_id,),
+        )
         conn.execute(_query("DELETE FROM users WHERE user_id=?"), (user_id,))
 
 
@@ -671,13 +998,608 @@ def list_users() -> list[dict]:
 
 def set_account_role(user_id: str, account_role: str) -> None:
     """Assign application permissions independently from a learner's work role."""
-    if account_role not in {"learner", "administrator"}:
-        raise ValueError("account_role must be 'learner' or 'administrator'")
+    if account_role not in {"learner", "editor", "administrator"}:
+        raise ValueError("account_role must be 'learner', 'editor' or 'administrator'")
     with _connect() as conn:
         conn.execute(
             _query("UPDATE users SET account_role=?, updated_at=? WHERE user_id=?"),
             (account_role, _now(), user_id),
         )
+
+
+
+def _decode_content_record(row: Any) -> dict | None:
+    data = _dict(row)
+    if not data:
+        return None
+    for source, target in (("draft_json", "draft"), ("published_json", "published")):
+        try:
+            data[target] = json.loads(data.get(source) or "") if data.get(source) else None
+        except (TypeError, json.JSONDecodeError):
+            data[target] = None
+    data["archived"] = bool(data.get("archived"))
+    data["sort_order"] = int(data.get("sort_order") or 0)
+    return data
+
+
+def list_cms_modules() -> list[dict]:
+    """Return module CMS rows, including drafts and archived records."""
+    with _connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT module_id, draft_json, published_json, sort_order, archived,
+                   updated_by, updated_at, published_at
+            FROM cms_modules
+            ORDER BY sort_order, module_id
+            """
+        ).fetchall()
+    return [record for row in rows if (record := _decode_content_record(row))]
+
+
+def get_cms_module(module_id: str) -> dict | None:
+    with _connect() as conn:
+        row = conn.execute(
+            _query("SELECT * FROM cms_modules WHERE module_id=?"),
+            (module_id,),
+        ).fetchone()
+    return _decode_content_record(row)
+
+
+def save_cms_module_draft(
+    module_id: str,
+    content: dict,
+    sort_order: int,
+    updated_by: str,
+) -> None:
+    now = _now()
+    payload = json.dumps(content, ensure_ascii=False)
+    with _connect() as conn:
+        conn.execute(
+            _query(
+                """
+                INSERT INTO cms_modules(
+                    module_id, draft_json, published_json, sort_order, archived,
+                    updated_by, updated_at, published_at
+                ) VALUES (?, ?, '', ?, 0, ?, ?, '')
+                ON CONFLICT(module_id) DO UPDATE SET
+                    draft_json=excluded.draft_json,
+                    sort_order=excluded.sort_order,
+                    updated_by=excluded.updated_by,
+                    updated_at=excluded.updated_at
+                """
+            ),
+            (module_id, payload, int(sort_order), updated_by, now),
+        )
+
+
+def publish_cms_module(
+    module_id: str,
+    content: dict,
+    sort_order: int,
+    published_by: str,
+) -> None:
+    now = _now()
+    payload = json.dumps(content, ensure_ascii=False)
+    with _connect() as conn:
+        existing = _dict(
+            conn.execute(
+                _query("SELECT published_json FROM cms_modules WHERE module_id=?"),
+                (module_id,),
+            ).fetchone()
+        )
+        if existing and existing.get("published_json"):
+            conn.execute(
+                _query(
+                    """
+                    INSERT INTO learning_content_revisions(
+                        content_type, module_id, lesson_id, content_json,
+                        published_by, published_at
+                    ) VALUES ('module', ?, '', ?, ?, ?)
+                    """
+                ),
+                (module_id, existing["published_json"], published_by, now),
+            )
+        conn.execute(
+            _query(
+                """
+                INSERT INTO cms_modules(
+                    module_id, draft_json, published_json, sort_order, archived,
+                    updated_by, updated_at, published_at
+                ) VALUES (?, ?, ?, ?, 0, ?, ?, ?)
+                ON CONFLICT(module_id) DO UPDATE SET
+                    draft_json=excluded.draft_json,
+                    published_json=excluded.published_json,
+                    sort_order=excluded.sort_order,
+                    archived=0,
+                    updated_by=excluded.updated_by,
+                    updated_at=excluded.updated_at,
+                    published_at=excluded.published_at
+                """
+            ),
+            (module_id, payload, payload, int(sort_order), published_by, now, now),
+        )
+
+
+def set_cms_module_archived(
+    module_id: str,
+    archived: bool,
+    updated_by: str,
+    *,
+    sort_order: int = 0,
+) -> None:
+    now = _now()
+    with _connect() as conn:
+        conn.execute(
+            _query(
+                """
+                INSERT INTO cms_modules(
+                    module_id, draft_json, published_json, sort_order, archived,
+                    updated_by, updated_at, published_at
+                ) VALUES (?, '', '', ?, ?, ?, ?, '')
+                ON CONFLICT(module_id) DO UPDATE SET
+                    archived=excluded.archived,
+                    sort_order=CASE
+                        WHEN cms_modules.sort_order=0 THEN excluded.sort_order
+                        ELSE cms_modules.sort_order
+                    END,
+                    updated_by=excluded.updated_by,
+                    updated_at=excluded.updated_at
+                """
+            ),
+            (module_id, int(sort_order), int(bool(archived)), updated_by, now),
+        )
+
+
+def list_cms_lessons(module_id: str | None = None) -> list[dict]:
+    """Return lesson CMS rows, including drafts and archived records."""
+    with _connect() as conn:
+        if module_id is None:
+            rows = conn.execute(
+                """
+                SELECT module_id, lesson_id, draft_json, published_json, sort_order,
+                       archived, updated_by, updated_at, published_at
+                FROM cms_lessons
+                ORDER BY module_id, sort_order, lesson_id
+                """
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                _query(
+                    """
+                    SELECT module_id, lesson_id, draft_json, published_json, sort_order,
+                           archived, updated_by, updated_at, published_at
+                    FROM cms_lessons
+                    WHERE module_id=?
+                    ORDER BY sort_order, lesson_id
+                    """
+                ),
+                (module_id,),
+            ).fetchall()
+    return [record for row in rows if (record := _decode_content_record(row))]
+
+
+def get_cms_lesson(module_id: str, lesson_id: str) -> dict | None:
+    with _connect() as conn:
+        row = conn.execute(
+            _query("SELECT * FROM cms_lessons WHERE module_id=? AND lesson_id=?"),
+            (module_id, lesson_id),
+        ).fetchone()
+    return _decode_content_record(row)
+
+
+def save_cms_lesson_draft(
+    module_id: str,
+    lesson_id: str,
+    content: dict,
+    sort_order: int,
+    updated_by: str,
+) -> None:
+    now = _now()
+    payload = json.dumps(content, ensure_ascii=False)
+    with _connect() as conn:
+        conn.execute(
+            _query(
+                """
+                INSERT INTO cms_lessons(
+                    module_id, lesson_id, draft_json, published_json, sort_order,
+                    archived, updated_by, updated_at, published_at
+                ) VALUES (?, ?, ?, '', ?, 0, ?, ?, '')
+                ON CONFLICT(module_id, lesson_id) DO UPDATE SET
+                    draft_json=excluded.draft_json,
+                    sort_order=excluded.sort_order,
+                    updated_by=excluded.updated_by,
+                    updated_at=excluded.updated_at
+                """
+            ),
+            (module_id, lesson_id, payload, int(sort_order), updated_by, now),
+        )
+
+
+def publish_cms_lesson(
+    module_id: str,
+    lesson_id: str,
+    content: dict,
+    sort_order: int,
+    published_by: str,
+) -> None:
+    now = _now()
+    payload = json.dumps(content, ensure_ascii=False)
+    with _connect() as conn:
+        existing = _dict(
+            conn.execute(
+                _query(
+                    "SELECT published_json FROM cms_lessons WHERE module_id=? AND lesson_id=?"
+                ),
+                (module_id, lesson_id),
+            ).fetchone()
+        )
+        if existing and existing.get("published_json"):
+            conn.execute(
+                _query(
+                    """
+                    INSERT INTO learning_content_revisions(
+                        content_type, module_id, lesson_id, content_json,
+                        published_by, published_at
+                    ) VALUES ('lesson', ?, ?, ?, ?, ?)
+                    """
+                ),
+                (module_id, lesson_id, existing["published_json"], published_by, now),
+            )
+        conn.execute(
+            _query(
+                """
+                INSERT INTO cms_lessons(
+                    module_id, lesson_id, draft_json, published_json, sort_order,
+                    archived, updated_by, updated_at, published_at
+                ) VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?)
+                ON CONFLICT(module_id, lesson_id) DO UPDATE SET
+                    draft_json=excluded.draft_json,
+                    published_json=excluded.published_json,
+                    sort_order=excluded.sort_order,
+                    archived=0,
+                    updated_by=excluded.updated_by,
+                    updated_at=excluded.updated_at,
+                    published_at=excluded.published_at
+                """
+            ),
+            (module_id, lesson_id, payload, payload, int(sort_order), published_by, now, now),
+        )
+
+
+def set_cms_lesson_archived(
+    module_id: str,
+    lesson_id: str,
+    archived: bool,
+    updated_by: str,
+    *,
+    sort_order: int = 0,
+) -> None:
+    now = _now()
+    with _connect() as conn:
+        conn.execute(
+            _query(
+                """
+                INSERT INTO cms_lessons(
+                    module_id, lesson_id, draft_json, published_json, sort_order,
+                    archived, updated_by, updated_at, published_at
+                ) VALUES (?, ?, '', '', ?, ?, ?, ?, '')
+                ON CONFLICT(module_id, lesson_id) DO UPDATE SET
+                    archived=excluded.archived,
+                    sort_order=CASE
+                        WHEN cms_lessons.sort_order=0 THEN excluded.sort_order
+                        ELSE cms_lessons.sort_order
+                    END,
+                    updated_by=excluded.updated_by,
+                    updated_at=excluded.updated_at
+                """
+            ),
+            (module_id, lesson_id, int(sort_order), int(bool(archived)), updated_by, now),
+        )
+
+
+def list_cms_tools() -> list[dict]:
+    """Return tool CMS rows, including drafts and archived records."""
+    with _connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT tool_id, draft_json, published_json, sort_order, archived,
+                   updated_by, updated_at, published_at
+            FROM cms_tools
+            ORDER BY sort_order, tool_id
+            """
+        ).fetchall()
+    return [record for row in rows if (record := _decode_content_record(row))]
+
+
+def get_cms_tool(tool_id: str) -> dict | None:
+    with _connect() as conn:
+        row = conn.execute(
+            _query("SELECT * FROM cms_tools WHERE tool_id=?"),
+            (tool_id,),
+        ).fetchone()
+    return _decode_content_record(row)
+
+
+def save_cms_tool_draft(tool_id: str, content: dict, sort_order: int, updated_by: str) -> None:
+    now = _now()
+    payload = json.dumps(content, ensure_ascii=False)
+    with _connect() as conn:
+        conn.execute(
+            _query(
+                """
+                INSERT INTO cms_tools(
+                    tool_id, draft_json, published_json, sort_order, archived,
+                    updated_by, updated_at, published_at
+                ) VALUES (?, ?, '', ?, 0, ?, ?, '')
+                ON CONFLICT(tool_id) DO UPDATE SET
+                    draft_json=excluded.draft_json,
+                    sort_order=excluded.sort_order,
+                    updated_by=excluded.updated_by,
+                    updated_at=excluded.updated_at
+                """
+            ),
+            (tool_id, payload, int(sort_order), updated_by, now),
+        )
+
+
+def publish_cms_tool(tool_id: str, content: dict, sort_order: int, published_by: str) -> None:
+    now = _now()
+    payload = json.dumps(content, ensure_ascii=False)
+    with _connect() as conn:
+        existing = _dict(
+            conn.execute(
+                _query("SELECT published_json FROM cms_tools WHERE tool_id=?"),
+                (tool_id,),
+            ).fetchone()
+        )
+        if existing and existing.get("published_json"):
+            conn.execute(
+                _query(
+                    """
+                    INSERT INTO learning_content_revisions(
+                        content_type, module_id, lesson_id, content_json,
+                        published_by, published_at
+                    ) VALUES ('tool', '', ?, ?, ?, ?)
+                    """
+                ),
+                (tool_id, existing["published_json"], published_by, now),
+            )
+        conn.execute(
+            _query(
+                """
+                INSERT INTO cms_tools(
+                    tool_id, draft_json, published_json, sort_order, archived,
+                    updated_by, updated_at, published_at
+                ) VALUES (?, ?, ?, ?, 0, ?, ?, ?)
+                ON CONFLICT(tool_id) DO UPDATE SET
+                    draft_json=excluded.draft_json,
+                    published_json=excluded.published_json,
+                    sort_order=excluded.sort_order,
+                    archived=0,
+                    updated_by=excluded.updated_by,
+                    updated_at=excluded.updated_at,
+                    published_at=excluded.published_at
+                """
+            ),
+            (tool_id, payload, payload, int(sort_order), published_by, now, now),
+        )
+
+
+def set_cms_tool_archived(tool_id: str, archived: bool, updated_by: str, *, sort_order: int = 0) -> None:
+    now = _now()
+    with _connect() as conn:
+        conn.execute(
+            _query(
+                """
+                INSERT INTO cms_tools(
+                    tool_id, draft_json, published_json, sort_order, archived,
+                    updated_by, updated_at, published_at
+                ) VALUES (?, '', '', ?, ?, ?, ?, '')
+                ON CONFLICT(tool_id) DO UPDATE SET
+                    archived=excluded.archived,
+                    sort_order=CASE
+                        WHEN cms_tools.sort_order=0 THEN excluded.sort_order
+                        ELSE cms_tools.sort_order
+                    END,
+                    updated_by=excluded.updated_by,
+                    updated_at=excluded.updated_at
+                """
+            ),
+            (tool_id, int(sort_order), int(bool(archived)), updated_by, now),
+        )
+
+
+def _validate_resource_scope(scope_type: str) -> str:
+    scope = str(scope_type or "").strip().lower()
+    if scope not in {"convince", "tool"}:
+        raise ValueError("scope_type must be 'convince' or 'tool'")
+    return scope
+
+
+def list_cms_resource_files(
+    scope_type: str | None = None,
+    scope_id: str | None = None,
+    *,
+    include_archived: bool = False,
+) -> list[dict]:
+    """Return resource metadata without loading file bytes."""
+    clauses = []
+    params: list[Any] = []
+    if scope_type is not None:
+        clauses.append("scope_type=?")
+        params.append(_validate_resource_scope(scope_type))
+    if scope_id is not None:
+        clauses.append("scope_id=?")
+        params.append(str(scope_id))
+    if not include_archived:
+        clauses.append("archived=0")
+    where = " WHERE " + " AND ".join(clauses) if clauses else ""
+    with _connect() as conn:
+        rows = conn.execute(
+            _query(
+                """
+                SELECT resource_id, scope_type, scope_id, module_id, resource_kind,
+                       title, description, file_name, mime_type,
+                       LENGTH(file_data) AS size_bytes, sort_order, archived,
+                       updated_by, updated_at
+                FROM cms_resource_files
+                """ + where + " ORDER BY scope_type, scope_id, sort_order, resource_id"
+            ),
+            tuple(params),
+        ).fetchall()
+    result = []
+    for row in rows:
+        data = dict(row)
+        data["archived"] = bool(data.get("archived"))
+        data["sort_order"] = int(data.get("sort_order") or 0)
+        data["size_bytes"] = int(data.get("size_bytes") or 0)
+        result.append(data)
+    return result
+
+
+def get_cms_resource_file(resource_id: str) -> dict | None:
+    """Return one resource including its binary payload for download."""
+    with _connect() as conn:
+        row = conn.execute(
+            _query("SELECT * FROM cms_resource_files WHERE resource_id=?"),
+            (resource_id,),
+        ).fetchone()
+    data = _dict(row)
+    if not data:
+        return None
+    data["archived"] = bool(data.get("archived"))
+    data["sort_order"] = int(data.get("sort_order") or 0)
+    payload = data.get("file_data")
+    if payload is not None and not isinstance(payload, bytes):
+        try:
+            data["file_data"] = bytes(payload)
+        except Exception:
+            pass
+    return data
+
+
+def save_cms_resource_file(
+    resource_id: str,
+    *,
+    scope_type: str,
+    scope_id: str,
+    module_id: str = "",
+    resource_kind: str = "File",
+    title: str,
+    description: str = "",
+    file_name: str | None = None,
+    mime_type: str | None = None,
+    file_data: bytes | None = None,
+    sort_order: int = 0,
+    updated_by: str = "",
+) -> None:
+    """Create a resource or update its metadata; file_data replaces bytes when supplied."""
+    scope = _validate_resource_scope(scope_type)
+    now = _now()
+    resource_id = str(resource_id or "").strip()
+    if not resource_id:
+        raise ValueError("resource_id is required")
+    clean_title = str(title or "").strip()
+    if not clean_title:
+        raise ValueError("title is required")
+    with _connect() as conn:
+        existing = _dict(
+            conn.execute(
+                _query("SELECT file_name, mime_type, file_data FROM cms_resource_files WHERE resource_id=?"),
+                (resource_id,),
+            ).fetchone()
+        )
+        if file_data is None:
+            if not existing:
+                raise ValueError("A file is required for a new resource")
+            file_name = str(file_name or existing.get("file_name") or "")
+            mime_type = str(mime_type or existing.get("mime_type") or "application/octet-stream")
+            file_data = existing.get("file_data")
+        else:
+            file_name = str(file_name or "").strip()
+            mime_type = str(mime_type or "application/octet-stream").strip()
+            if not file_name:
+                raise ValueError("file_name is required when replacing file data")
+        conn.execute(
+            _query(
+                """
+                INSERT INTO cms_resource_files(
+                    resource_id, scope_type, scope_id, module_id, resource_kind,
+                    title, description, file_name, mime_type, file_data,
+                    sort_order, archived, updated_by, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+                ON CONFLICT(resource_id) DO UPDATE SET
+                    scope_type=excluded.scope_type,
+                    scope_id=excluded.scope_id,
+                    module_id=excluded.module_id,
+                    resource_kind=excluded.resource_kind,
+                    title=excluded.title,
+                    description=excluded.description,
+                    file_name=excluded.file_name,
+                    mime_type=excluded.mime_type,
+                    file_data=excluded.file_data,
+                    sort_order=excluded.sort_order,
+                    archived=0,
+                    updated_by=excluded.updated_by,
+                    updated_at=excluded.updated_at
+                """
+            ),
+            (
+                resource_id, scope, str(scope_id or ""), str(module_id or ""),
+                str(resource_kind or "File").strip() or "File", clean_title,
+                str(description or "").strip(), file_name, mime_type, file_data,
+                int(sort_order), str(updated_by or ""), now,
+            ),
+        )
+
+
+def set_cms_resource_archived(resource_id: str, archived: bool, updated_by: str) -> None:
+    with _connect() as conn:
+        conn.execute(
+            _query(
+                "UPDATE cms_resource_files SET archived=?, updated_by=?, updated_at=? WHERE resource_id=?"
+            ),
+            (int(bool(archived)), str(updated_by or ""), _now(), resource_id),
+        )
+
+
+def list_content_revisions(limit: int = 100) -> list[dict]:
+    """Return recent module/lesson/idea/tool publication history for the admin studio."""
+    limit = max(1, min(int(limit), 500))
+    with _connect() as conn:
+        learning_rows = conn.execute(
+            _query(
+                """
+                SELECT revision_id, content_type, module_id, lesson_id,
+                       published_by, published_at
+                FROM learning_content_revisions
+                ORDER BY revision_id DESC
+                LIMIT ?
+                """
+            ),
+            (limit,),
+        ).fetchall()
+        carousel_rows = conn.execute(
+            _query(
+                """
+                SELECT revision_id, module_id, topic_id AS lesson_id,
+                       published_by, published_at
+                FROM carousel_revisions
+                ORDER BY revision_id DESC
+                LIMIT ?
+                """
+            ),
+            (limit,),
+        ).fetchall()
+    result = []
+    for row in learning_rows:
+        result.append(dict(row))
+    for row in carousel_rows:
+        data = dict(row)
+        data["content_type"] = "ideas"
+        result.append(data)
+    result.sort(key=lambda item: str(item.get("published_at") or ""), reverse=True)
+    return result[:limit]
 
 
 def get_carousel_content(module_id: str, topic_id: str) -> dict | None:
