@@ -106,6 +106,7 @@ PRIVACY_POLICY_EFFECTIVE_DATE = "21 September 2026"
 # cached initializer so Streamlit Cloud cannot reuse a pre-migration cache entry
 # after a hot deployment.
 DATABASE_SCHEMA_VERSION = "2026-10-01-content-studio-media-links-v3"
+APP_BUILD_ID = "2026-10-01-tools-search-alphabetical-v6"
 
 # Prefer a dedicated square favicon, then the approved MOSAIC logo. The globe
 # is retained only as a last-resort fallback when neither image is installed.
@@ -825,7 +826,7 @@ def brand_home_html(*, sidebar: bool = False) -> str:
         logo = f"{brand_mark_html()}<strong>MOSAIC</strong>"
     css_class = "m-brand-home sidebar" if sidebar else "m-brand-home"
     return (
-        f"<a class='{css_class}' href='?home=1' target='_self' aria-label='Go to MOSAIC Learn home'>"
+        f"<a class='{css_class}' href='?page=home' target='_self' aria-label='Go to MOSAIC Learn home'>"
         f"{logo}<span class='m-brand-learn'>Learn</span></a>"
     )
 
@@ -1460,8 +1461,18 @@ def navigate(
         st.session_state.pop("topic_id", None)
     if tool_id is not None:
         st.session_state.tool_id = tool_id
-    elif route != "tool":
+    elif route != "tools":
         st.session_state.pop("tool_id", None)
+
+    # Make navigation bookmarkable and browser-history aware. Query parameters
+    # are the URL source of truth on the next run, while Session State keeps the
+    # current run responsive.
+    _write_route_query(
+        route,
+        module_id=module_id,
+        topic_id=topic_id,
+        tool_id=tool_id,
+    )
     st.rerun()
 
 
@@ -1764,8 +1775,7 @@ def ensure_profile(user: dict) -> dict:
                 profile_complete=True,
             )
             _record_privacy_acceptance(user["user_id"])
-            st.session_state.route = "home"
-            st.rerun()
+            navigate("home")
     st.stop()
 
 def module_completion(user_id: str, module_id: str):
@@ -2541,21 +2551,81 @@ def page_tools(user):
             width="stretch",
         )
 
+    st.markdown(
+        """
+        <div class="m-admin-note">
+            <strong>Not sure which tool to start with?</strong>
+            <p>Start with the learning modules. The lessons introduce the concepts first and point you to the tools that fit each learning step.</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    if st.button("Explore the learning modules →", key="tools-start-with-learning", width="content"):
+        navigate("catalogue")
+
     source_module_id = str(st.session_state.get("module_id") or "")
     source_topic_id = str(st.session_state.get("topic_id") or "")
-    if selected_tool:
-        source_module = MODULES.get(source_module_id)
-        if source_module:
-            st.info(f"You came here from **{source_module['short_title']}**. The **{selected_tool['title']}** resources are shown first.")
-        if source_module and source_topic_id and topic_by_id(source_module_id, source_topic_id):
-            if st.button("← Return to the learning step", key="tools-return-to-topic"):
-                navigate("topic", source_module_id, source_topic_id)
+    source_module = MODULES.get(source_module_id) if selected_tool else None
+    came_from_lesson = bool(
+        selected_tool
+        and source_module
+        and source_topic_id
+        and topic_by_id(source_module_id, source_topic_id)
+    )
+    if selected_tool and came_from_lesson:
+        st.info(f"You came here from **{source_module['short_title']}**. The **{selected_tool['title']}** resources are shown first.")
+        if st.button("← Return to the learning step", key="tools-return-to-topic"):
+            navigate("topic", source_module_id, source_topic_id)
 
-    tool_items = list(TOOL_DEFINITIONS.items())
-    if selected_tool:
-        tool_items.sort(key=lambda item: item[0] != selected_tool_id)
-    if not tool_items:
+    search_query = st.text_input(
+        "Search tools",
+        key="tools-search-query",
+        placeholder="Search by tool name, purpose, output or module…",
+    ).strip()
+
+    all_tool_items = sorted(
+        TOOL_DEFINITIONS.items(),
+        key=lambda item: str(item[1].get("title") or item[0]).casefold(),
+    )
+    if search_query:
+        needle = search_query.casefold()
+        tool_items = []
+        for tool_id, tool in all_tool_items:
+            links = _tool_lesson_links(tool)
+            searchable = " ".join(
+                [
+                    str(tool.get("title") or ""),
+                    str(tool.get("description") or ""),
+                    str(tool.get("outcome") or ""),
+                    str(tool.get("format") or ""),
+                    str(tool.get("duration") or ""),
+                    _tool_module_label(tool),
+                    " ".join(f"{module_id} {topic_id}" for module_id, topic_id in links),
+                ]
+            ).casefold()
+            if needle in searchable:
+                tool_items.append((tool_id, tool))
+    else:
+        tool_items = list(all_tool_items)
+
+    # Keep the lesson-recommended tool first, while every other tool stays alphabetical.
+    if came_from_lesson and selected_tool_id:
+        tool_items.sort(
+            key=lambda item: (
+                item[0] != selected_tool_id,
+                str(item[1].get("title") or item[0]).casefold(),
+            )
+        )
+
+    if not TOOL_DEFINITIONS:
         st.info("No published tools are available yet.")
+        return
+    if search_query:
+        st.caption(f"Showing {len(tool_items)} of {len(TOOL_DEFINITIONS)} tools for ‘{search_query}’.")
+    else:
+        st.caption(f"{len(tool_items)} tools · alphabetical by title")
+    if not tool_items:
+        st.info("No tools match your search. Try a broader term or clear the search field.")
         return
 
     cols = st.columns(2, gap="large")
@@ -4259,9 +4329,9 @@ def page_profile(user):
             _delete_account_data(user["user_id"])
             if user.get("demo"):
                 st.session_state.demo_user = None
-                st.session_state.route = "home"
-                st.rerun()
+                navigate("home")
             else:
+                _write_route_query("home")
                 st.logout()
 
     st.divider()
@@ -4269,10 +4339,10 @@ def page_profile(user):
         st.caption("Local preview mode: configure Streamlit OIDC to test production authentication.")
         if st.button("Leave local preview"):
             st.session_state.demo_user = None
-            st.session_state.route = "home"
-            st.rerun()
+            navigate("home")
     else:
         if st.button("Sign out"):
+            _write_route_query("home")
             st.logout()
 
 
@@ -5436,40 +5506,54 @@ def _render_content_studio_tool_image_manager(user: dict, tool_id: str, tool: di
         record = _cached_resource_file(active["resource_id"])
         if record and record.get("file_data"):
             st.image(record["file_data"], caption=str(record.get("description") or record.get("title") or "Tool image"), width=420)
-    with st.form(f"studio-tool-image-{tool_id}"):
-        alt_text = st.text_input(
-            "Image description",
-            value=str(active.get("description") or tool.get("title") or "Tool image") if active else str(tool.get("title") or "Tool image"),
-        )
-        upload = st.file_uploader(
-            "Add or replace image",
-            type=["png", "jpg", "jpeg", "webp"],
-            key=f"studio-tool-image-upload-{tool_id}",
-        )
-        save_image = st.form_submit_button("Save tool image", type="primary", disabled=upload is None)
-    if save_image and upload is not None:
-        file_name, mime_type, file_bytes = _validate_uploaded_image(upload)
-        if file_bytes is not None:
-            resource_id = active["resource_id"] if active else uuid4().hex
-            links = _tool_lesson_links(tool)
-            module_id = links[0][0] if links else str(tool.get("module_id") or "")
-            save_cms_resource_file(
-                resource_id,
-                scope_type="tool_image",
-                scope_id=tool_id,
-                module_id=module_id,
-                resource_kind="Tool image",
-                title=str(tool.get("title") or tool_id),
-                description=alt_text.strip() or str(tool.get("title") or "Tool image"),
-                file_name=file_name,
-                mime_type=mime_type,
-                file_data=file_bytes,
-                sort_order=10,
-                updated_by=user["user_id"],
-            )
-            _clear_content_studio_caches()
-            _content_studio_flash("Tool image saved.")
-            st.rerun()
+    # Keep the uploader outside a form. In Streamlit forms, file-uploader values
+    # are submitted in the same batch as the submit button, so deriving the
+    # button's disabled state from `upload is None` can leave the button disabled
+    # on Streamlit Cloud even after a file was selected.
+    alt_text = st.text_input(
+        "Image description",
+        value=str(active.get("description") or tool.get("title") or "Tool image") if active else str(tool.get("title") or "Tool image"),
+        key=f"studio-tool-image-alt-{tool_id}",
+    )
+    upload = st.file_uploader(
+        "Add or replace image",
+        type=["png", "jpg", "jpeg", "webp"],
+        key=f"studio-tool-image-upload-{tool_id}",
+    )
+    save_image = st.button(
+        "Save tool image",
+        key=f"studio-tool-image-save-{tool_id}",
+        type="primary",
+        disabled=upload is None,
+        width="stretch",
+    )
+    if save_image:
+        if upload is None:
+            st.error("Choose an image before saving.")
+        else:
+            file_name, mime_type, file_bytes = _validate_uploaded_image(upload)
+            if file_bytes is not None:
+                resource_id = active["resource_id"] if active else uuid4().hex
+                links = _tool_lesson_links(tool)
+                module_id = links[0][0] if links else str(tool.get("module_id") or "")
+                save_cms_resource_file(
+                    resource_id,
+                    scope_type="tool_image",
+                    scope_id=tool_id,
+                    module_id=module_id,
+                    resource_kind="Tool image",
+                    title=str(tool.get("title") or tool_id),
+                    description=alt_text.strip() or str(tool.get("title") or "Tool image"),
+                    file_name=file_name,
+                    mime_type=mime_type,
+                    file_data=file_bytes,
+                    sort_order=10,
+                    updated_by=user["user_id"],
+                )
+                _clear_content_studio_caches()
+                _set_query_param("admin", "tools")
+                _content_studio_flash("Tool image saved.")
+                st.rerun()
     if active and st.button("Remove tool image", key=f"studio-tool-image-remove-{tool_id}"):
         set_cms_resource_archived(active["resource_id"], True, user["user_id"])
         _clear_content_studio_caches()
@@ -5754,6 +5838,150 @@ def _render_content_studio_status(snapshot: dict[str, dict]) -> None:
 
 
 
+# Canonical route URLs. This remains a single-file Streamlit app, but each
+# top-level view gets a stable query-string URL so links can be bookmarked and
+# browser Back/Forward can restore the previous view.
+URL_ROUTE_ALIASES = {
+    "home": "home",
+    "catalogue": "catalogue",
+    "modules": "catalogue",
+    "learning": "learning",
+    "my-learning": "learning",
+    "tools": "tools",
+    "glossary": "glossary",
+    "contact": "contact",
+    "privacy": "privacy",
+    "community": "community",
+    "module": "module",
+    "topic": "topic",
+    "lesson": "topic",
+    "convince": "convince",
+    "profile": "profile",
+    "admin": "admin",
+    "results": "results",
+}
+ROUTE_TO_URL_PAGE = {
+    "home": "home",
+    "catalogue": "modules",
+    "learning": "my-learning",
+    "tools": "tools",
+    "glossary": "glossary",
+    "contact": "contact",
+    "privacy": "privacy",
+    "community": "community",
+    "module": "module",
+    "topic": "lesson",
+    "convince": "convince",
+    "profile": "profile",
+    "admin": "admin",
+    "results": "results",
+}
+
+
+def _query_params_dict() -> dict[str, str]:
+    result: dict[str, str] = {}
+    try:
+        for key in st.query_params:
+            value = st.query_params.get(key, "")
+            if isinstance(value, (list, tuple)):
+                value = value[-1] if value else ""
+            result[str(key)] = str(value or "")
+    except Exception:
+        pass
+    return result
+
+
+def _replace_query_params(values: dict[str, str]) -> None:
+    """Replace URL query state only when it actually changed.
+
+    Avoiding no-op writes matters for browser history: recent Streamlit versions
+    intentionally skip duplicate history entries when the query string is
+    unchanged.
+    """
+    desired = {str(k): str(v) for k, v in values.items() if str(v) != ""}
+    current = _query_params_dict()
+    if current == desired:
+        return
+    try:
+        if hasattr(st.query_params, "from_dict"):
+            st.query_params.from_dict(desired)
+        else:
+            st.query_params.clear()
+            for key, value in desired.items():
+                st.query_params[key] = value
+    except Exception:
+        # Session State still provides functional navigation on an older runtime.
+        pass
+
+
+def _write_route_query(
+    route: str,
+    *,
+    module_id: str | None = None,
+    topic_id: str | None = None,
+    tool_id: str | None = None,
+) -> None:
+    page = ROUTE_TO_URL_PAGE.get(str(route), str(route))
+    params: dict[str, str] = {"page": page}
+
+    # Preserve Content Studio sub-navigation when staying inside admin.
+    if route == "admin":
+        admin_section = _query_param_text("admin")
+        admin_view = _query_param_text("admin_view")
+        if admin_section:
+            params["admin"] = admin_section
+        if admin_view:
+            params["admin_view"] = admin_view
+
+    if route in {"module", "topic", "convince", "tools"}:
+        module_value = str(module_id or st.session_state.get("module_id") or "").strip()
+        if module_value:
+            params["module"] = module_value
+    if route in {"topic", "tools"}:
+        topic_value = str(topic_id or st.session_state.get("topic_id") or "").strip()
+        if topic_value:
+            params["topic"] = topic_value
+    if route == "tools":
+        tool_value = str(tool_id or st.session_state.get("tool_id") or "").strip()
+        if tool_value:
+            params["tool"] = tool_value
+
+    _replace_query_params(params)
+
+
+def _apply_route_from_query() -> str:
+    """Load the current browser URL into Session State.
+
+    The URL is authoritative for top-level navigation. This is what makes a
+    browser Back/Forward action restore the previous MOSAIC Learn page instead
+    of leaving Session State on the newer page.
+    """
+    page = _query_param_text("page").lower()
+    if not page and _query_param_text("admin"):
+        page = "admin"  # upgrade existing Content Studio URLs from v4
+    if not page and _query_param_text("home"):
+        page = "home"  # backwards compatibility with older wordmark links
+    route = URL_ROUTE_ALIASES.get(page, "home") if page else "home"
+    st.session_state["route"] = route
+
+    module_value = _query_param_text("module")
+    topic_value = _query_param_text("topic") or _query_param_text("lesson")
+    tool_value = _query_param_text("tool")
+
+    if module_value:
+        st.session_state["module_id"] = module_value
+    if route in {"topic", "tools"} and topic_value:
+        st.session_state["topic_id"] = topic_value
+    elif route not in {"topic", "tools"}:
+        st.session_state.pop("topic_id", None)
+    if route == "tools" and tool_value:
+        st.session_state["tool_id"] = tool_value
+    elif route != "tools":
+        st.session_state.pop("tool_id", None)
+
+    return route
+
+
 CONTENT_STUDIO_SECTION_SLUGS = {
     "Modules & lessons": "structure",
     "Ideas & content": "ideas",
@@ -5778,18 +6006,13 @@ def _query_param_text(name: str) -> str:
 
 
 def _set_query_param(name: str, value: str | None) -> None:
-    try:
-        clean_value = str(value or "").strip()
-        current_value = _query_param_text(name)
-        if clean_value:
-            if current_value != clean_value:
-                st.query_params[name] = clean_value
-        elif current_value and name in st.query_params:
-            del st.query_params[name]
-    except Exception:
-        # URL state is a convenience only; Session State remains the source of
-        # truth if a deployment uses an older Streamlit query-param runtime.
-        pass
+    params = _query_params_dict()
+    clean_value = str(value or "").strip()
+    if clean_value:
+        params[name] = clean_value
+    else:
+        params.pop(name, None)
+    _replace_query_params(params)
 
 
 def _sync_content_studio_section_query() -> None:
@@ -5972,29 +6195,24 @@ if share_token:
     page_public_result(str(share_token))
     st.stop()
 
-# Route state is intentionally independent from the sidebar. This fixes the
-# previous "open module -> home -> open module" rerun loop.
-st.session_state.setdefault("route", "home")
+# URL-backed router. Session State still holds widget/page state, while the
+# browser URL identifies the current top-level view. This makes pages bookmarkable
+# and lets browser Back/Forward restore previous navigation.
 st.session_state.setdefault("module_id", "drivers")
-# The wordmark uses a normal link so it works even when the sidebar is collapsed.
-# Convert that query parameter back into the app's session-state router.
-if st.query_params.get("home"):
-    st.session_state.route = "home"
-    st.session_state.pop("topic_id", None)
-    st.session_state.pop("tool_id", None)
-    del st.query_params["home"]
-# Remove obsolete router state from v1 if the app hot-reloads in an existing session.
+route = _apply_route_from_query()
+# Remove obsolete router state from earlier prototypes if the app hot-reloads in
+# an existing session.
 st.session_state.pop("goto", None)
 st.session_state.pop("selected_module", None)
 st.session_state.pop("selected_topic", None)
 
 apply_published_learning_content()
-route = st.session_state.route
 if route == "results":
     # Keep old sessions and bookmarks working after Results moved under My learning.
     st.session_state["learning-section"] = "Results & sharing"
     st.session_state.route = "learning"
     route = "learning"
+    _write_route_query("learning")
 protected_routes = {
     "learning",
     "community",
@@ -6038,5 +6256,4 @@ elif route == "profile":
 elif route == "admin":
     page_admin(user)
 else:
-    st.session_state.route = "home"
-    st.rerun()
+    navigate("home")
