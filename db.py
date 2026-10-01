@@ -1411,8 +1411,9 @@ def set_cms_tool_archived(tool_id: str, archived: bool, updated_by: str, *, sort
 
 def _validate_resource_scope(scope_type: str) -> str:
     scope = str(scope_type or "").strip().lower()
-    if scope not in {"convince", "tool"}:
-        raise ValueError("scope_type must be 'convince' or 'tool'")
+    allowed = {"convince", "tool", "tool_image", "idea"}
+    if scope not in allowed:
+        raise ValueError("scope_type must be one of: convince, tool, tool_image, idea")
     return scope
 
 

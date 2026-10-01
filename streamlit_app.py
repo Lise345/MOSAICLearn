@@ -105,7 +105,7 @@ PRIVACY_POLICY_EFFECTIVE_DATE = "21 September 2026"
 # Change this value whenever init_db() gains a migration. It is passed into the
 # cached initializer so Streamlit Cloud cannot reuse a pre-migration cache entry
 # after a hot deployment.
-DATABASE_SCHEMA_VERSION = "2026-09-23-content-studio-resources-v2"
+DATABASE_SCHEMA_VERSION = "2026-10-01-content-studio-media-links-v3"
 
 # Prefer a dedicated square favicon, then the approved MOSAIC logo. The globe
 # is retained only as a last-resort fallback when neither image is installed.
@@ -585,6 +585,10 @@ html, body, [class*="css"] { font-family: Poppins, "Segoe UI", Arial, sans-serif
     box-shadow:0 2px 8px rgba(60,60,59,.035);
 }
 .m-theory-inner { width:100%; max-width:920px; margin:0 auto; }
+.m-theory-card.has-idea-image { display:grid; grid-template-columns:minmax(0,2fr) minmax(220px,1fr); padding:0; overflow:hidden; align-items:stretch; }
+.m-theory-card.has-idea-image .m-theory-inner { max-width:none; margin:0; padding:clamp(2rem,4vw,3.6rem) clamp(1.6rem,4.6vw,4rem); align-self:center; }
+.m-idea-media { min-height:330px; background:var(--m-soft); overflow:hidden; }
+.m-idea-media img { width:100%; height:100%; min-height:330px; object-fit:cover; display:block; }
 .m-theory-label { text-transform:uppercase; letter-spacing:.11em; font-size:.72rem; color:var(--m-wine); font-weight:700; }
 .m-theory-card h3 { max-width:30ch; margin:.72rem 0 .9rem; font-size:clamp(1.65rem,2.7vw,2.3rem); line-height:1.2; letter-spacing:-.025em; }
 .m-theory-card p { max-width:76ch; margin:0; font-size:1.05rem; line-height:1.82; color:#4b4b48; }
@@ -788,7 +792,7 @@ html, body, [class*="css"] { font-family: Poppins, "Segoe UI", Arial, sans-serif
     .block-container{padding-left:1.25rem;padding-right:1.25rem}
     .m-hero{grid-template-columns:1fr}.m-hero-art{min-height:220px}.m-convince-hero{grid-template-columns:1fr}.m-convince-art{min-height:150px}
     .m-building-grid,.m-evidence-grid,.m-tool-steps{grid-template-columns:repeat(2,minmax(0,1fr));}.m-brandtag{display:none}
-    .m-theory-card{min-height:290px}.m-theory-inner{max-width:none}
+    .m-theory-card{min-height:290px}.m-theory-inner{max-width:none}.m-theory-card.has-idea-image{grid-template-columns:minmax(0,2fr) minmax(190px,1fr)}.m-idea-media,.m-idea-media img{min-height:290px}
     .m-practice-feature{grid-template-columns:1fr}.m-practice-media{min-height:145px;max-height:210px}.m-community-hero-grid{grid-template-columns:1fr}.m-community-snapshot{border-left:0;border-top:1px solid #dce5df}.m-community-snapshot-grid{max-width:520px}
 }
 @media (max-width: 620px) {
@@ -796,7 +800,7 @@ html, body, [class*="css"] { font-family: Poppins, "Segoe UI", Arial, sans-serif
     .m-building-grid,.m-evidence-grid,.m-resource-grid,.m-driver-grid,.m-tool-steps,.m-mycelium-metrics,.m-community-snapshot-grid{grid-template-columns:1fr}
     .m-track-card{min-height:0}.m-module-card{height:auto;min-height:0}.m-start-intro{grid-template-columns:1fr}.m-start-image{min-height:150px}.m-start-choice,.m-glossary-card{min-height:0}.m-phase-header{grid-template-columns:44px minmax(0,1fr)}.m-phase-progress{grid-column:2;justify-self:start}.m-lesson-row{grid-template-columns:38px minmax(0,1fr)}.m-lesson-time{grid-column:2}
     [class*="st-key-path_step_"] [data-testid="stHorizontalBlock"]{gap:.55rem}.m-path-copy .meta{font-size:.63rem}
-    .m-theory-card{min-height:0;padding:1.5rem 1.25rem;border-radius:19px}.m-theory-progress{width:78%;margin-bottom:.75rem}
+    .m-theory-card{min-height:0;padding:1.5rem 1.25rem;border-radius:19px}.m-theory-card.has-idea-image{grid-template-columns:1fr;padding:0}.m-theory-card.has-idea-image .m-theory-inner{padding:1.5rem 1.25rem}.m-idea-media,.m-idea-media img{min-height:190px;max-height:240px}.m-theory-progress{width:78%;margin-bottom:.75rem}
     .st-key-theory_navigation [data-testid="stButton"] button{min-width:0;width:100%;font-size:.86rem}
     .m-mini-mark{width:30px;height:30px}.m-brandbar{margin-bottom:.8rem}.m-brand-logo{height:36px;max-width:150px}.m-brand-learn{padding-left:.5rem}.m-brand-home{gap:.5rem}
 }
@@ -926,6 +930,8 @@ def default_carousel_payload(topic: dict) -> dict:
                     or card_item.get("text_html")
                     or plain_text_as_html(card_item.get("text", ""))
                 ),
+                "image_resource_id": str(card_item.get("image_resource_id") or "").strip(),
+                "image_alt": str(card_item.get("image_alt") or card_item.get("title") or "Idea image").strip(),
             }
         )
     return {
@@ -960,6 +966,8 @@ def normalize_carousel_payload(payload: dict, fallback_topic: dict) -> dict:
                 "label": str(card_item.get("label", "Core idea")).strip() or "Core idea",
                 "title": title,
                 "body_html": sanitize_rich_text(card_item.get("body_html", "")),
+                "image_resource_id": str(card_item.get("image_resource_id") or "").strip(),
+                "image_alt": str(card_item.get("image_alt") or title or "Idea image").strip(),
             }
         )
     return {
@@ -1051,6 +1059,28 @@ def _normalise_tool_payload(tool_id: str, payload: dict | None) -> dict:
     data["title"] = str(data.get("title") or tool_id).strip()
     data["module_id"] = str(data.get("module_id") or "").strip()
     data["topic_id"] = str(data.get("topic_id") or "").strip()
+
+    raw_links = data.get("lesson_links") or []
+    links: list[dict[str, str]] = []
+    if isinstance(raw_links, list):
+        for item in raw_links:
+            if isinstance(item, dict):
+                module_id = str(item.get("module_id") or "").strip()
+                lesson_id = str(item.get("lesson_id") or item.get("topic_id") or "").strip()
+            elif isinstance(item, str) and "::" in item:
+                module_id, lesson_id = [part.strip() for part in item.split("::", 1)]
+            else:
+                continue
+            if module_id and lesson_id and {"module_id": module_id, "lesson_id": lesson_id} not in links:
+                links.append({"module_id": module_id, "lesson_id": lesson_id})
+    if not links and data["module_id"] and data["topic_id"]:
+        links.append({"module_id": data["module_id"], "lesson_id": data["topic_id"]})
+    data["lesson_links"] = links
+    if links:
+        # Keep the legacy fields populated for older templates and deep links.
+        data["module_id"] = links[0]["module_id"]
+        data["topic_id"] = links[0]["lesson_id"]
+
     data["duration"] = str(data.get("duration") or "").strip()
     data["format"] = str(data.get("format") or "Downloadable resource").strip()
     data["description"] = str(data.get("description") or "").strip()
@@ -1088,6 +1118,104 @@ def _admin_tools_snapshot() -> dict[str, dict]:
 
 def _resource_files_for(scope_type: str, scope_id: str, *, include_archived: bool = False) -> list[dict]:
     return _cached_resource_files(scope_type, scope_id, include_archived)
+
+
+def _resource_image_data_uri(resource_id: str | None) -> str:
+    if not resource_id:
+        return ""
+    record = _cached_resource_file(str(resource_id))
+    if not record or record.get("archived") or not record.get("file_data"):
+        return ""
+    mime_type = str(record.get("mime_type") or "").lower()
+    if not mime_type.startswith("image/"):
+        return ""
+    encoded = base64.b64encode(record["file_data"]).decode("ascii")
+    return f"data:{mime_type};base64,{encoded}"
+
+
+def _idea_image_scope_id(module_id: str, lesson_id: str, card_id: str) -> str:
+    return f"{module_id}:{lesson_id}:{card_id}"
+
+
+def _tool_lesson_links(tool: dict) -> list[tuple[str, str]]:
+    links = []
+    for item in tool.get("lesson_links") or []:
+        if not isinstance(item, dict):
+            continue
+        module_id = str(item.get("module_id") or "").strip()
+        lesson_id = str(item.get("lesson_id") or item.get("topic_id") or "").strip()
+        if module_id and lesson_id and (module_id, lesson_id) not in links:
+            links.append((module_id, lesson_id))
+    if not links:
+        module_id = str(tool.get("module_id") or "").strip()
+        lesson_id = str(tool.get("topic_id") or "").strip()
+        if module_id and lesson_id:
+            links.append((module_id, lesson_id))
+    return links
+
+
+def _tools_for_learning_step(module_id: str, lesson_id: str) -> list[tuple[str, dict]]:
+    return [
+        (tool_id, tool)
+        for tool_id, tool in TOOL_DEFINITIONS.items()
+        if (module_id, lesson_id) in _tool_lesson_links(tool)
+    ]
+
+
+def _tool_module_label(tool: dict) -> str:
+    module_ids = []
+    for module_id, _ in _tool_lesson_links(tool):
+        if module_id not in module_ids:
+            module_ids.append(module_id)
+    if not module_ids and tool.get("module_id"):
+        module_ids.append(str(tool.get("module_id")))
+    labels = [MODULES[mid]["short_title"] for mid in module_ids if mid in MODULES]
+    if not labels:
+        return "MOSAIC Learn"
+    if len(labels) <= 2:
+        return " · ".join(labels)
+    return f"{labels[0]} + {len(labels) - 1} more"
+
+
+def _tool_download_payload(tool_id: str, tool: dict) -> tuple[bytes, str, str, int]:
+    files: list[tuple[str, bytes, str]] = []
+    used_names: set[str] = set()
+    for meta in _resource_files_for("tool", tool_id):
+        record = _cached_resource_file(meta["resource_id"])
+        if not record or record.get("archived") or not record.get("file_data"):
+            continue
+        name = _safe_resource_filename(record.get("file_name"))
+        base_name = name
+        counter = 2
+        while name in used_names:
+            stem = Path(base_name).stem
+            suffix = Path(base_name).suffix
+            name = f"{stem}-{counter}{suffix}"
+            counter += 1
+        used_names.add(name)
+        files.append((name, record["file_data"], str(record.get("mime_type") or "application/octet-stream")))
+    for file_name in TOOL_DOWNLOAD_FILES.get(tool_id, []):
+        file_path, file_type, error = configured_tool_file(file_name)
+        if not file_path or error:
+            continue
+        name = _safe_resource_filename(file_name)
+        if name in used_names:
+            continue
+        used_names.add(name)
+        files.append((name, file_path.read_bytes(), file_type[1]))
+
+    if not files:
+        data = tool_template_markdown(tool_id, tool).encode("utf-8")
+        return data, f"{tool_id}-resources.md", "text/markdown", 1
+    if len(files) == 1:
+        name, data, mime_type = files[0]
+        return data, name, mime_type, 1
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for name, data, _mime_type in files:
+            archive.writestr(name, data)
+    return buffer.getvalue(), f"{tool_id}-resources.zip", "application/zip", len(files)
 
 
 def _format_file_size(size_bytes: int | None) -> str:
@@ -1388,11 +1516,11 @@ def _render_sign_in_prompt():
                     f"Continue with {_provider_label(provider)}",
                     key=f"login-{provider}",
                     type="primary",
-                    use_container_width=True,
+                    width="stretch",
                 ):
                     st.login(provider)
     else:
-        if st.button("Sign in to MOSAIC Learn", type="primary", use_container_width=True):
+        if st.button("Sign in to MOSAIC Learn", type="primary", width="stretch"):
             st.login()
     st.caption(
         "First-time users create a MOSAIC learner profile after Google returns them to the app. "
@@ -1543,7 +1671,7 @@ def privacy_reconsent_dialog(user_id: str) -> None:
     if st.button(
         "Accept and continue",
         type="primary",
-        use_container_width=True,
+        width="stretch",
         disabled=not accepted,
     ):
         _record_privacy_acceptance(user_id)
@@ -1622,7 +1750,7 @@ def ensure_profile(user: dict) -> dict:
         update_acknowledged = st.checkbox(
             "I understand that MOSAIC Learn will ask me to review and accept a new version before I can continue if this notice changes."
         )
-        submitted = st.form_submit_button("Create my profile", type="primary", use_container_width=True)
+        submitted = st.form_submit_button("Create my profile", type="primary", width="stretch")
     if submitted:
         if not privacy_accepted or not update_acknowledged:
             st.error("Accept the current privacy notice and confirm the update process to create your profile.")
@@ -1727,7 +1855,7 @@ def render_sidebar(user: dict | None):
             items.append(("profile", "○  My profile"))
         for key, label in items:
             button_type = "primary" if route == key else "secondary"
-            if st.button(label, key=f"nav-{key}", use_container_width=True, type=button_type):
+            if st.button(label, key=f"nav-{key}", width="stretch", type=button_type):
                 navigate(key)
 
         if unread_community:
@@ -1769,14 +1897,14 @@ def render_sidebar(user: dict | None):
         ]
         for key, label in reference_items:
             button_type = "primary" if route == key else "secondary"
-            if st.button(label, key=f"nav-{key}", use_container_width=True, type=button_type):
+            if st.button(label, key=f"nav-{key}", width="stretch", type=button_type):
                 navigate(key)
         if user and is_content_editor(user):
             st.caption("CONTENT")
             if st.button(
                 "✎  Content studio",
                 key="nav-admin",
-                use_container_width=True,
+                width="stretch",
                 type="primary" if route == "admin" else "secondary",
             ):
                 navigate("admin")
@@ -1792,10 +1920,10 @@ def render_sidebar(user: dict | None):
                 st.markdown(f"**{module['short_title']}**")
                 ratio, done, total = module_completion(user["user_id"], module_id)
                 st.progress(ratio, text=f"{done}/{total} learning steps")
-                if st.button("Module overview", use_container_width=True):
+                if st.button("Module overview", width="stretch"):
                     navigate("module", module_id)
             if module.get("convince") or _resource_files_for("convince", module_id):
-                if st.button("Convince: evidence & resources", key=f"side-convince-{module_id}", use_container_width=True, type="primary" if route == "convince" else "secondary"):
+                if st.button("Convince: evidence & resources", key=f"side-convince-{module_id}", width="stretch", type="primary" if route == "convince" else "secondary"):
                     navigate("convince", module_id)
 
             if route == "topic":
@@ -1804,7 +1932,7 @@ def render_sidebar(user: dict | None):
                 for idx, topic in enumerate(learning_topics(module), start=1):
                     marker = "✓" if progress.get(topic["id"], {}).get("completed") else str(idx)
                     prefix = "→" if topic["id"] == topic_id else marker
-                    if st.button(f"{prefix}  {topic['title']}", key=f"side-topic-{topic['id']}", use_container_width=True):
+                    if st.button(f"{prefix}  {topic['title']}", key=f"side-topic-{topic['id']}", width="stretch"):
                         navigate("topic", module_id, topic["id"])
 
 
@@ -1871,7 +1999,7 @@ def page_home(user: dict | None):
             if st.button(
                 button_label,
                 key=f"home-track-{target_type}",
-                use_container_width=True,
+                width="stretch",
             ):
                 navigate(target_type, target_id)
 
@@ -1898,9 +2026,9 @@ def page_home(user: dict | None):
                     ratio, done, total = module_completion(user_id, module_id)
                     topic_id = first_incomplete_topic(user_id, module_id)
                     label = "Continue →" if done else "Start module →"
-                    if topic_id and st.button(label, key=f"home-continue-{module_id}", type="primary", use_container_width=True):
+                    if topic_id and st.button(label, key=f"home-continue-{module_id}", type="primary", width="stretch"):
                         navigate("topic", module_id, topic_id)
-                elif st.button("Open learning journey →", key=f"home-continue-{module_id}", type="primary", use_container_width=True):
+                elif st.button("Open learning journey →", key=f"home-continue-{module_id}", type="primary", width="stretch"):
                     navigate("module", module_id)
 
 
@@ -1914,10 +2042,10 @@ def page_catalogue(user: dict | None):
         with cols[idx % 3]:
             st.markdown(module_card_html(module_id, user["user_id"] if user else None), unsafe_allow_html=True)
             if module["status"] == "Available":
-                if st.button("Open module →", key=f"open-{module_id}", type="primary", use_container_width=True):
+                if st.button("Open module →", key=f"open-{module_id}", type="primary", width="stretch"):
                     navigate("module", module_id)
             else:
-                st.button("Coming soon", key=f"soon-{module_id}", disabled=True, use_container_width=True)
+                st.button("Coming soon", key=f"soon-{module_id}", disabled=True, width="stretch")
 
     guide_image = asset_image_html(
         "starting-point-heron.png",
@@ -1984,7 +2112,7 @@ def page_catalogue(user: dict | None):
             if st.button(
                 "This sounds like me",
                 key=f"starting-point-{module_id}",
-                use_container_width=True,
+                width="stretch",
             ):
                 st.session_state.catalogue_recommendation = module_id
 
@@ -2010,14 +2138,14 @@ def page_catalogue(user: dict | None):
                 "Open module →",
                 key="open-recommended-module",
                 type="primary",
-                use_container_width=True,
+                width="stretch",
             ):
                 navigate("module", recommendation_id)
         with reset_col:
             if st.button(
                 "Choose a different question",
                 key="reset-recommendation",
-                use_container_width=True,
+                width="stretch",
             ):
                 st.session_state.pop("catalogue_recommendation", None)
                 st.rerun()
@@ -2210,7 +2338,14 @@ RESOURCE_UPLOAD_TYPES = {
     ".txt": "text/plain",
     ".zip": "application/zip",
 }
+IMAGE_UPLOAD_TYPES = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".webp": "image/webp",
+}
 MAX_CMS_RESOURCE_BYTES = 25 * 1024 * 1024
+MAX_CMS_IMAGE_BYTES = 8 * 1024 * 1024
 
 
 def configured_tool_file(file_name: str):
@@ -2343,7 +2478,7 @@ def _render_resource_download(meta: dict, *, key: str, button_type: str = "secon
         mime=str(record.get("mime_type") or "application/octet-stream"),
         key=key,
         type=button_type,
-        use_container_width=True,
+        width="stretch",
     )
     return True
 
@@ -2394,26 +2529,27 @@ def page_tools(user):
 
     intro_col, download_col = st.columns([2.4, 1], vertical_alignment="center")
     with intro_col:
-        st.markdown("### Download a template and make it yours")
-        st.caption("Administrators can manage tool descriptions and attach downloadable files in the Content Studio. Repository templates remain available as a fallback.")
+        st.markdown("### Download resources and make them yours")
+        st.caption("A tool can contain several downloadable resources. Administrators manage the files, learning-step links and optional tool image in the Content Studio.")
     with download_col:
         st.download_button(
-            "Download all templates (.zip)",
+            "Download all resources (.zip)",
             data=all_tools_zip(),
-            file_name="mosaic-house-of-tools.zip",
+            file_name="mosaic-house-of-tools-resources.zip",
             mime="application/zip",
             type="primary",
-            use_container_width=True,
+            width="stretch",
         )
 
+    source_module_id = str(st.session_state.get("module_id") or "")
+    source_topic_id = str(st.session_state.get("topic_id") or "")
     if selected_tool:
-        module = MODULES.get(selected_tool.get("module_id"))
-        if module:
-            st.info(f"You came here from **{module['short_title']}**. The **{selected_tool['title']}** template is shown first.")
-        topic_id = st.session_state.get("topic_id")
-        if module and topic_id and topic_by_id(selected_tool["module_id"], topic_id):
-            if st.button("← Return to the Apply step", key="tools-return-to-topic"):
-                navigate("topic", selected_tool["module_id"], topic_id)
+        source_module = MODULES.get(source_module_id)
+        if source_module:
+            st.info(f"You came here from **{source_module['short_title']}**. The **{selected_tool['title']}** resources are shown first.")
+        if source_module and source_topic_id and topic_by_id(source_module_id, source_topic_id):
+            if st.button("← Return to the learning step", key="tools-return-to-topic"):
+                navigate("topic", source_module_id, source_topic_id)
 
     tool_items = list(TOOL_DEFINITIONS.items())
     if selected_tool:
@@ -2424,9 +2560,10 @@ def page_tools(user):
 
     cols = st.columns(2, gap="large")
     for idx, (tool_id, tool) in enumerate(tool_items):
-        module = MODULES.get(tool.get("module_id"))
-        module_label = module.get("short_title") if module else "MOSAIC Learn"
-        card_class = "drivers" if tool.get("module_id") == "drivers" else "policy-lab"
+        links = _tool_lesson_links(tool)
+        primary_module_id = links[0][0] if links else str(tool.get("module_id") or "")
+        module_label = _tool_module_label(tool)
+        card_class = "drivers" if primary_module_id == "drivers" else "policy-lab"
         with cols[idx % 2]:
             st.markdown(
                 f"""
@@ -2440,54 +2577,45 @@ def page_tools(user):
                 unsafe_allow_html=True,
             )
             with st.expander("What is inside"):
+                tool_images = _resource_files_for("tool_image", tool_id)
+                if tool_images:
+                    image_record = _cached_resource_file(tool_images[0]["resource_id"])
+                    if image_record and image_record.get("file_data") and not image_record.get("archived"):
+                        st.image(
+                            image_record["file_data"],
+                            caption=str(image_record.get("description") or image_record.get("title") or ""),
+                            width="stretch",
+                        )
                 if tool.get("outcome"):
                     st.markdown(f"**Output:** {tool['outcome']}")
                 for step_index, step in enumerate(tool.get("steps") or [], start=1):
                     st.markdown(f"{step_index}. {step}")
 
-            available_files = 0
-            for meta in _resource_files_for("tool", tool_id):
-                if meta.get("archived"):
-                    continue
-                kind = str(meta.get("resource_kind") or "Template")
-                title = str(meta.get("title") or meta.get("file_name") or "Tool file")
-                if meta.get("description"):
-                    st.caption(meta["description"])
-                if _render_resource_download(
-                    meta,
-                    key=f"download-db-tool-{tool_id}-{meta['resource_id']}",
-                    button_type="primary" if tool_id == selected_tool_id else "secondary",
-                    label=f"Download {kind}: {title} ↓",
-                ):
-                    available_files += 1
+                resource_names = [
+                    str(meta.get("title") or meta.get("file_name") or "Resource")
+                    for meta in _resource_files_for("tool", tool_id)
+                    if not meta.get("archived")
+                ]
+                for file_name in TOOL_DOWNLOAD_FILES.get(tool_id, []):
+                    file_path, _file_type, error = configured_tool_file(file_name)
+                    if file_path and not error:
+                        resource_names.append(file_name)
+                if resource_names:
+                    st.markdown("**Resources included:**")
+                    for resource_name in resource_names:
+                        st.markdown(f"- {escape(resource_name)}")
 
-            for file_name in TOOL_DOWNLOAD_FILES.get(tool_id, []):
-                file_path, file_type, error = configured_tool_file(file_name)
-                if error:
-                    st.caption(f"⚠ {error}")
-                    continue
-                label, mime_type = file_type
-                st.download_button(
-                    f"Download {label} template ↓",
-                    data=file_path.read_bytes(),
-                    file_name=file_name,
-                    mime=mime_type,
-                    key=f"download-tool-{tool_id}-{file_name}",
-                    type="primary" if tool_id == selected_tool_id and not available_files else "secondary",
-                    use_container_width=True,
-                )
-                available_files += 1
-
-            if not available_files:
-                st.download_button(
-                    "Download editable template (.md) ↓",
-                    data=tool_template_markdown(tool_id, tool),
-                    file_name=f"{tool_id}.md",
-                    mime="text/markdown",
-                    key=f"download-tool-{tool_id}-markdown",
-                    type="primary" if tool_id == selected_tool_id else "secondary",
-                    use_container_width=True,
-                )
+            resource_data, resource_name, resource_mime, resource_count = _tool_download_payload(tool_id, tool)
+            st.download_button(
+                "Download resources ↓",
+                data=resource_data,
+                file_name=resource_name,
+                mime=resource_mime,
+                key=f"download-tool-resources-{tool_id}",
+                type="primary" if tool_id == selected_tool_id else "secondary",
+                width="stretch",
+            )
+            st.caption(f"{resource_count} resource{'s' if resource_count != 1 else ''} included")
 
 
 def page_learning(user):
@@ -2524,9 +2652,9 @@ def page_learning(user):
                 if next_topic:
                     st.caption(f"Next: {next_topic['level']} · {next_topic['title']} · {next_topic['minutes']} min")
             with b:
-                if next_topic and st.button("Continue →", key=f"continue-{module_id}", type="primary", use_container_width=True):
+                if next_topic and st.button("Continue →", key=f"continue-{module_id}", type="primary", width="stretch"):
                     navigate("topic", module_id, next_topic_id)
-                if st.button("Module overview", key=f"overview-{module_id}", use_container_width=True):
+                if st.button("Module overview", key=f"overview-{module_id}", width="stretch"):
                     navigate("module", module_id)
 
 
@@ -2586,7 +2714,7 @@ def render_module_path(user, module_id: str):
                         if st.button(
                             "Review →" if done else "Start →",
                             key=f"module-topic-{topic['id']}",
-                            use_container_width=True,
+                            width="stretch",
                             type="primary" if not done else "secondary",
                         ):
                             navigate("topic", module_id, topic["id"])
@@ -2617,13 +2745,13 @@ def render_module_modes(user, module_id: str):
             st.markdown(f"<div class='m-mode-card {cls}'><div class='m-mode-num'>{num}</div><h3>{title}</h3><p>{text}</p><span class='m-mode-note'>{note}</span></div>", unsafe_allow_html=True)
             if cls == "convince":
                 if convince_available:
-                    if st.button("Open evidence & resources →", key=f"mode-convince-{module_id}", use_container_width=True, type="secondary"):
+                    if st.button("Open evidence & resources →", key=f"mode-convince-{module_id}", width="stretch", type="secondary"):
                         navigate("convince", module_id)
                 else:
                     st.caption("Available after the source section is completed.")
             else:
                 candidates = understand if cls == "understand" else apply_steps
-                if candidates and st.button(f"Go to {title.lower()} →", key=f"mode-{cls}-{module_id}", use_container_width=True):
+                if candidates and st.button(f"Go to {title.lower()} →", key=f"mode-{cls}-{module_id}", width="stretch"):
                     navigate("topic", module_id, candidates[0]["id"])
 
 
@@ -2730,7 +2858,7 @@ def page_module(user):
         st.caption(f"{done} of {total} learning steps completed")
         st.caption("Convince resources do not affect completion.")
         next_topic_id = first_incomplete_topic(user["user_id"], module_id)
-        if next_topic_id and st.button("Continue learning →", key=f"module-continue-{module_id}", type="primary", use_container_width=True):
+        if next_topic_id and st.button("Continue learning →", key=f"module-continue-{module_id}", type="primary", width="stretch"):
             navigate("topic", module_id, next_topic_id)
 
     role_name = user.get("role") or "Research"
@@ -2840,15 +2968,25 @@ def render_theory_story(module_id: str, topic):
             or item.get("text_html")
             or plain_text_as_html(item.get("text", ""))
         )
+        idea_image_uri = _resource_image_data_uri(item.get("image_resource_id"))
+        idea_image_html = ""
+        card_class = "m-theory-card"
+        if idea_image_uri:
+            card_class += " has-idea-image"
+            idea_image_html = (
+                "<div class='m-idea-media'>"
+                f"<img src='{idea_image_uri}' alt='{escape(str(item.get('image_alt') or item.get('title') or 'Idea image'))}'>"
+                "</div>"
+            )
         card_html = (
             "<div class='m-theory-wrap'>"
             f"<div class='m-theory-progress' aria-label='Theory progress: step {step} of {len(slides)}'>{dots}</div>"
-            "<div class='m-theory-card'><div class='m-theory-inner'>"
+            f"<div class='{card_class}'><div class='m-theory-inner'>"
             f"<div class='m-theory-label'>{escape(item.get('label', 'Core idea'))} · {step}/{len(slides)}</div>"
             f"<h3>{escape(item['title'])}</h3>"
             f"<div class='m-rich-text'>{body_html}</div>"
             f"{bullets}"
-            "</div></div></div>"
+            f"</div>{idea_image_html}</div></div>"
         )
     st.markdown(card_html, unsafe_allow_html=True)
 
@@ -2883,21 +3021,34 @@ def render_learning_extras(module_id: str, topic, *, include_practice: bool = Tr
             f"<div class='m-practice-note'><div class='label'>From MOSAIC practice</div><p>{escape(topic['practice_note'])}</p></div>",
             unsafe_allow_html=True,
         )
-    tool = topic.get("tool")
-    if tool:
+
+    linked_tools = _tools_for_learning_step(module_id, str(topic.get("id") or ""))
+    legacy_tool = topic.get("tool") if isinstance(topic.get("tool"), dict) else None
+    if legacy_tool:
+        legacy_id = str(legacy_tool.get("id") or "").strip()
+        if legacy_id and legacy_id in TOOL_DEFINITIONS and all(tool_id != legacy_id for tool_id, _ in linked_tools):
+            linked_tools.append((legacy_id, TOOL_DEFINITIONS[legacy_id]))
+
+    for tool_id, tool in linked_tools:
+        title = str(tool.get("title") or tool.get("name") or tool_id)
+        description = str(tool.get("description") or "")
         st.markdown(
-            f"<div class='m-tool-card'><div class='label'>Try it yourself</div><h4>{escape(tool['name'])}</h4><p>{escape(tool['description'])}</p></div>",
+            f"<div class='m-tool-card'><div class='label'>Try it yourself</div><h4>{escape(title)}</h4><p>{escape(description)}</p></div>",
             unsafe_allow_html=True,
         )
-        tool_id = tool.get("id")
-        if tool_id in TOOL_DEFINITIONS:
-            with st.container(key="tool_action"):
-                if st.button(
-                    f"Open {tool['name']} template →",
-                    key=f"open-tool-{module_id}-{topic['id']}",
-                    type="primary",
-                ):
-                    navigate("tools", module_id, topic["id"], tool_id)
+        with st.container(key=f"tool_action_{module_id}_{topic['id']}_{tool_id}"):
+            if st.button(
+                f"Open {title} resources →",
+                key=f"open-tool-{module_id}-{topic['id']}-{tool_id}",
+                type="primary",
+            ):
+                navigate("tools", module_id, topic["id"], tool_id)
+
+    if legacy_tool and not linked_tools:
+        st.markdown(
+            f"<div class='m-tool-card'><div class='label'>Try it yourself</div><h4>{escape(str(legacy_tool.get('name') or 'Tool'))}</h4><p>{escape(str(legacy_tool.get('description') or ''))}</p></div>",
+            unsafe_allow_html=True,
+        )
 
 
 def render_quiz(user, module_id: str, topic):
@@ -2987,7 +3138,7 @@ def page_topic(user):
 
     back_col, prog_col = st.columns([1, 2.5], vertical_alignment="center")
     with back_col:
-        if st.button("← Module overview", use_container_width=True):
+        if st.button("← Module overview", width="stretch"):
             navigate("module", module_id)
     with prog_col:
         st.progress(ratio, text=f"Learning progress · {done}/{total} steps")
@@ -3037,7 +3188,7 @@ def page_topic(user):
     with st.container(key="reflection_actions"):
         action1, action2 = st.columns([1, 1], gap="medium")
         with action1:
-            if st.button("Save reflection", key=f"save-{module_id}-{topic['id']}", use_container_width=True):
+            if st.button("Save reflection", key=f"save-{module_id}-{topic['id']}", width="stretch"):
                 _save_progress(
                     user["user_id"],
                     module_id,
@@ -3048,7 +3199,7 @@ def page_topic(user):
         with action2:
             if not saved.get("completed"):
                 complete_label = "Complete & continue →" if next_topic else "Complete learning path ✓"
-                if st.button(complete_label, key=f"complete-{module_id}-{topic['id']}", type="primary", use_container_width=True):
+                if st.button(complete_label, key=f"complete-{module_id}-{topic['id']}", type="primary", width="stretch"):
                     _save_progress(
                         user["user_id"],
                         module_id,
@@ -3062,20 +3213,20 @@ def page_topic(user):
                         navigate("module", module_id)
             else:
                 st.success("✓ Lesson completed")
-                if st.button("Mark incomplete", key=f"incomplete-{module_id}-{topic['id']}", use_container_width=True):
+                if st.button("Mark incomplete", key=f"incomplete-{module_id}-{topic['id']}", width="stretch"):
                     _save_progress(user["user_id"], module_id, topic["id"], completed=False)
                     st.rerun()
 
     with st.container(key="lesson_footer"):
         prev_col, mid_col, next_col = st.columns([1, 1, 1], gap="medium")
         with prev_col:
-            if previous_topic and st.button("← Previous lesson", use_container_width=True):
+            if previous_topic and st.button("← Previous lesson", width="stretch"):
                 navigate("topic", module_id, previous_topic["id"])
         with mid_col:
-            if st.button("Learning path", use_container_width=True):
+            if st.button("Learning path", width="stretch"):
                 navigate("module", module_id)
         with next_col:
-            if next_topic and st.button("Next lesson →", use_container_width=True):
+            if next_topic and st.button("Next lesson →", width="stretch"):
                 navigate("topic", module_id, next_topic["id"])
 
 
@@ -3199,10 +3350,10 @@ def page_convince(user):
     st.divider()
     left, right = st.columns(2)
     with left:
-        if st.button("Back to learning path", key=f"convince-back-{module_id}", use_container_width=True):
+        if st.button("Back to learning path", key=f"convince-back-{module_id}", width="stretch"):
             navigate("module", module_id)
     with right:
-        if st.button("Share an experience with the community →", key=f"convince-community-{module_id}", type="primary", use_container_width=True):
+        if st.button("Share an experience with the community →", key=f"convince-community-{module_id}", type="primary", width="stretch"):
             st.session_state.community_module = module_id
             navigate("community")
 
@@ -3279,13 +3430,13 @@ def page_results(user, *, embedded: bool = False):
     )
     share_col, community_col = st.columns(2)
     with share_col:
-        if st.button("Generate public result link", key=f"share-{module_id}", type="primary", use_container_width=True):
+        if st.button("Generate public result link", key=f"share-{module_id}", type="primary", width="stretch"):
             token = create_share(user["user_id"], module_id, snapshot)
             base_url = _secret("PUBLIC_APP_URL", "")
             share_link = f"{base_url.rstrip('/')}?share={quote(token)}" if base_url else f"?share={quote(token)}"
             st.session_state.last_share_link = share_link
     with community_col:
-        if st.button("Share a reflection with the community →", key=f"community-from-results-{module_id}", use_container_width=True):
+        if st.button("Share a reflection with the community →", key=f"community-from-results-{module_id}", width="stretch"):
             st.session_state.community_module = module_id
             navigate("community")
     if st.session_state.get("last_share_link"):
@@ -3392,7 +3543,7 @@ def page_community(user):
                 button_label,
                 key=f"community-nav-button-{target_section}",
                 type="primary" if active else "secondary",
-                use_container_width=True,
+                width="stretch",
                 help=f"Open {title}",
             ):
                 st.session_state["community-section"] = target_section
@@ -3534,7 +3685,7 @@ def page_community(user):
                             f"{icon} {label} · {count}",
                             key=f"react-{reaction_key}-{post_id}",
                             type="primary" if viewer_reaction == reaction_key else "secondary",
-                            use_container_width=True,
+                            width="stretch",
                         ):
                             toggle_community_reaction(
                                 post_id,
@@ -3581,7 +3732,7 @@ def page_community(user):
                         )
                         comment_submitted = st.form_submit_button(
                             "Comment",
-                            use_container_width=True,
+                            width="stretch",
                         )
                     if comment_submitted:
                         cleaned_comment = comment_text.strip()
@@ -3722,7 +3873,7 @@ def page_community(user):
                                     "Accept",
                                     key=f"mycelium-accept-{connection_id}",
                                     type="primary",
-                                    use_container_width=True,
+                                    width="stretch",
                                 ):
                                     try:
                                         respond_mycelium_connection(
@@ -3740,7 +3891,7 @@ def page_community(user):
                                 if st.button(
                                     "Decline",
                                     key=f"mycelium-decline-{connection_id}",
-                                    use_container_width=True,
+                                    width="stretch",
                                 ):
                                     try:
                                         respond_mycelium_connection(
@@ -3786,7 +3937,7 @@ def page_community(user):
                             send_request = st.form_submit_button(
                                 "Send connection request",
                                 type="primary",
-                                use_container_width=True,
+                                width="stretch",
                             )
                         if send_request:
                             try:
@@ -4045,7 +4196,7 @@ def page_profile(user):
             f"**Accepted on:** {escape(accepted_text)}"
         )
     with notice_col:
-        if st.button("Read privacy notice →", use_container_width=True):
+        if st.button("Read privacy notice →", width="stretch"):
             navigate("privacy")
 
     st.markdown("<div class='m-section-title'><h2>My reflection notebook</h2><p>Everything you save while learning is gathered here, across all modules.</p></div>", unsafe_allow_html=True)
@@ -4229,12 +4380,14 @@ def _render_content_studio_modules(user: dict, snapshot: dict[str, dict]) -> Non
                 if module.get("track") not in track_options:
                     track_options.append(str(module.get("track") or "Learning"))
                 track = st.selectbox(
-                    "Track",
+                    "Color",
                     track_options,
                     index=track_options.index(module.get("track") or "Learning"),
+                    format_func=lambda value: {"Learning": "Blue", "Community": "Green", "Empowerment": "Ochre"}.get(value, value),
+                    help="This only controls the module's visual color. The legacy value is kept internally for compatibility.",
                     key=f"studio-module-track-{module_id}",
                 )
-                track_icon = st.text_input("Track icon", value=module.get("track_icon", "◎"), max_chars=4, key=f"studio-module-icon-{module_id}")
+                track_icon = st.text_input("Module icon", value=module.get("track_icon", "◎"), max_chars=4, key=f"studio-module-icon-{module_id}")
             description = st.text_area("Description", value=module.get("description", ""), height=100, key=f"studio-module-description-{module_id}")
             c, d, e = st.columns(3)
             with c:
@@ -4290,12 +4443,12 @@ def _render_content_studio_modules(user: dict, snapshot: dict[str, dict]) -> Non
             )
             save_col, publish_col = st.columns(2)
             with save_col:
-                save_pressed = st.form_submit_button("Save module draft", use_container_width=True)
+                save_pressed = st.form_submit_button("Save module draft", width="stretch")
             with publish_col:
                 publish_pressed = st.form_submit_button(
                     "Publish module",
                     type="primary",
-                    use_container_width=True,
+                    width="stretch",
                     disabled=not is_admin or archived,
                 )
         if save_pressed:
@@ -4352,7 +4505,13 @@ def _render_content_studio_modules(user: dict, snapshot: dict[str, dict]) -> Non
                 new_id = st.text_input("Module ID", placeholder="new-module-id", key="studio-new-module-id").strip().lower()
                 new_title = st.text_input("Title", placeholder="New learning module", key="studio-new-module-title")
                 new_short = st.text_input("Short title", placeholder="New module", key="studio-new-module-short")
-                new_track = st.selectbox("Track", ["Learning", "Community", "Empowerment"], key="new-module-track")
+                new_track = st.selectbox(
+                    "Color",
+                    ["Learning", "Community", "Empowerment"],
+                    format_func=lambda value: {"Learning": "Blue", "Community": "Green", "Empowerment": "Ochre"}.get(value, value),
+                    help="This only controls the module's visual color.",
+                    key="new-module-track",
+                )
                 new_description = st.text_area("Description", height=90, key="studio-new-module-description")
                 new_minutes = st.number_input("Estimated minutes", min_value=0, max_value=5000, value=30, key="studio-new-module-minutes")
                 new_sort = st.number_input("Sort order", min_value=0, max_value=10000, value=(len(snapshot) + 1) * 10, step=10, key="studio-new-module-sort")
@@ -4466,12 +4625,12 @@ def _render_content_studio_lessons(user: dict, snapshot: dict[str, dict]) -> Non
             )
             save_col, publish_col = st.columns(2)
             with save_col:
-                save_pressed = st.form_submit_button("Save lesson draft", use_container_width=True)
+                save_pressed = st.form_submit_button("Save lesson draft", width="stretch")
             with publish_col:
                 publish_pressed = st.form_submit_button(
                     "Publish lesson",
                     type="primary",
-                    use_container_width=True,
+                    width="stretch",
                     disabled=not is_admin or archived,
                 )
         if save_pressed:
@@ -4637,15 +4796,21 @@ def _render_content_studio_ideas(user: dict, snapshot: dict[str, dict]) -> None:
                     "label": "Core idea",
                     "title": "New idea",
                     "body_html": "<p>Add the text here.</p>",
+                    "image_resource_id": "",
+                    "image_alt": "Idea image",
                 }
             ]
-            st.session_state[working_key] = payload
+            _persist_idea_draft_if_valid(module_id, topic_id, payload, topic, user["user_id"], working_key)
+            first_card_id = payload["cards"][0]["editor_id"]
+            _queue_widget_selection(screen_key, first_card_id)
             st.rerun()
         selected_block = "synthesis"
     else:
         block_options = [card["editor_id"] for card in payload["cards"]] + ["synthesis"]
+        _apply_queued_widget_selection(screen_key, block_options)
         if st.session_state.get(screen_key) not in block_options:
             st.session_state[screen_key] = block_options[0]
+
         selected_block = st.selectbox(
             "Carousel screen",
             block_options,
@@ -4712,12 +4877,81 @@ def _render_content_studio_ideas(user: dict, snapshot: dict[str, dict]) -> None:
             current_card.get("body_html", ""),
             key=f"studio-body-{module_id}-{topic_id}-{card_id}",
         )
+        image_resource_id = str(current_card.get("image_resource_id") or "").strip()
+        image_alt = st.text_input(
+            "Idea image description",
+            value=str(current_card.get("image_alt") or current_card.get("title") or "Idea image"),
+            key=f"studio-idea-image-alt-{module_id}-{topic_id}-{card_id}",
+        )
         payload["cards"][card_index] = {
             "editor_id": card_id,
             "label": label.strip() or "Core idea",
             "title": title.strip(),
             "body_html": body_html,
+            "image_resource_id": image_resource_id,
+            "image_alt": image_alt.strip() or title.strip() or "Idea image",
         }
+
+        if image_resource_id:
+            image_record = _cached_resource_file(image_resource_id)
+            if image_record and image_record.get("file_data") and not image_record.get("archived"):
+                st.image(image_record["file_data"], caption="Current idea image", width=320)
+        if is_admin:
+            st.caption("Optional PNG. When published, the image occupies roughly one third of the idea card on larger screens.")
+            idea_upload = st.file_uploader(
+                "Add or replace idea PNG",
+                type=["png"],
+                key=f"studio-idea-image-upload-{module_id}-{topic_id}-{card_id}",
+            )
+            image_add_col, image_remove_col = st.columns(2)
+            with image_add_col:
+                if st.button(
+                    "Attach PNG",
+                    key=f"studio-idea-image-attach-{module_id}-{topic_id}-{card_id}",
+                    disabled=idea_upload is None,
+                    width="stretch",
+                ):
+                    file_name, mime_type, file_bytes = _validate_uploaded_image(idea_upload, png_only=True)
+                    if file_bytes is not None:
+                        new_resource_id = uuid4().hex
+                        save_cms_resource_file(
+                            new_resource_id,
+                            scope_type="idea",
+                            scope_id=_idea_image_scope_id(module_id, topic_id, card_id),
+                            module_id=module_id,
+                            resource_kind="Idea image",
+                            title=title.strip() or "Idea image",
+                            description=image_alt.strip() or title.strip() or "Idea image",
+                            file_name=file_name,
+                            mime_type=mime_type,
+                            file_data=file_bytes,
+                            sort_order=10,
+                            updated_by=user["user_id"],
+                        )
+                        payload["cards"][card_index]["image_resource_id"] = new_resource_id
+                        _persist_idea_draft_if_valid(
+                            module_id, topic_id, payload, topic, user["user_id"], working_key
+                        )
+                        _queue_widget_selection(screen_key, card_id)
+                        _content_studio_flash(
+                            "PNG attached and the idea draft was saved. Use ‘Publish ideas’ when you want learners to see it."
+                        )
+                        st.rerun()
+            with image_remove_col:
+                if st.button(
+                    "Remove image from draft",
+                    key=f"studio-idea-image-remove-{module_id}-{topic_id}-{card_id}",
+                    disabled=not image_resource_id,
+                    width="stretch",
+                ):
+                    payload["cards"][card_index]["image_resource_id"] = ""
+                    _persist_idea_draft_if_valid(
+                        module_id, topic_id, payload, topic, user["user_id"], working_key
+                    )
+                    _queue_widget_selection(screen_key, card_id)
+                    _content_studio_flash("Image removed and the idea draft was saved. Publish the ideas to remove it for learners.")
+                    st.rerun()
+
         move_col, add_col, remove_col = st.columns([1.3, 1, 1])
         with move_col:
             target_position = st.selectbox(
@@ -4730,18 +4964,21 @@ def _render_content_studio_ideas(user: dict, snapshot: dict[str, dict]) -> None:
                 "Move idea",
                 key=f"studio-move-{module_id}-{topic_id}-{card_id}",
                 disabled=target_position - 1 == card_index,
-                use_container_width=True,
+                width="stretch",
             ):
                 moved = payload["cards"].pop(card_index)
                 payload["cards"].insert(target_position - 1, moved)
-                st.session_state[working_key] = payload
+                _persist_idea_draft_if_valid(
+                    module_id, topic_id, payload, topic, user["user_id"], working_key
+                )
+                _queue_widget_selection(screen_key, card_id)
                 st.rerun()
         with add_col:
             if st.button(
                 "＋ Add idea",
                 key=f"studio-add-idea-{module_id}-{topic_id}-{card_id}",
                 disabled=not is_admin,
-                use_container_width=True,
+                width="stretch",
             ):
                 new_card_id = uuid4().hex[:16]
                 payload["cards"].insert(
@@ -4751,24 +4988,32 @@ def _render_content_studio_ideas(user: dict, snapshot: dict[str, dict]) -> None:
                         "label": "Core idea",
                         "title": "New idea",
                         "body_html": "<p>Add the text here.</p>",
+                        "image_resource_id": "",
+                        "image_alt": "Idea image",
                     },
                 )
-                st.session_state[working_key] = payload
-                st.session_state[screen_key] = new_card_id
+                _persist_idea_draft_if_valid(
+                    module_id, topic_id, payload, topic, user["user_id"], working_key
+                )
+                _queue_widget_selection(screen_key, new_card_id)
                 st.rerun()
         with remove_col:
             if st.button(
                 "Remove idea",
                 key=f"studio-remove-idea-{module_id}-{topic_id}-{card_id}",
                 disabled=not is_admin,
-                use_container_width=True,
+                width="stretch",
             ):
                 payload["cards"].pop(card_index)
-                st.session_state[working_key] = payload
-                if payload["cards"]:
-                    st.session_state[screen_key] = payload["cards"][min(card_index, len(payload["cards"]) - 1)]["editor_id"]
-                else:
-                    st.session_state.pop(screen_key, None)
+                _persist_idea_draft_if_valid(
+                    module_id, topic_id, payload, topic, user["user_id"], working_key
+                )
+                next_screen = (
+                    payload["cards"][min(card_index, len(payload["cards"]) - 1)]["editor_id"]
+                    if payload["cards"]
+                    else "synthesis"
+                )
+                _queue_widget_selection(screen_key, next_screen)
                 st.rerun()
 
     st.session_state[working_key] = payload
@@ -4780,10 +5025,11 @@ def _render_content_studio_ideas(user: dict, snapshot: dict[str, dict]) -> None:
     st.divider()
     save_col, publish_col, reload_col, open_col = st.columns(4)
     with save_col:
-        if st.button("Save draft", key=f"studio-save-ideas-{module_id}-{topic_id}", disabled=not content_valid, use_container_width=True):
+        if st.button("Save draft", key=f"studio-save-ideas-{module_id}-{topic_id}", disabled=not content_valid, width="stretch"):
             save_carousel_draft(module_id, topic_id, cleaned_payload, user["user_id"])
             _clear_content_studio_caches()
             st.session_state[working_key] = cleaned_payload
+            _queue_widget_selection(screen_key, str(selected_block))
             _content_studio_flash("Idea draft saved.")
             st.rerun()
     with publish_col:
@@ -4792,23 +5038,27 @@ def _render_content_studio_ideas(user: dict, snapshot: dict[str, dict]) -> None:
             key=f"studio-publish-ideas-{module_id}-{topic_id}",
             type="primary",
             disabled=not is_admin or not content_valid,
-            use_container_width=True,
+            width="stretch",
         ):
             publish_carousel_content(module_id, topic_id, cleaned_payload, user["user_id"])
             _clear_content_studio_caches()
             st.session_state[working_key] = cleaned_payload
-            _content_studio_flash("Ideas published.")
+            _queue_widget_selection(screen_key, str(selected_block))
+            _content_studio_flash("Ideas published. The learner-facing carousel now includes the current idea images.")
             st.rerun()
     with reload_col:
-        if st.button("Reload saved", key=f"studio-reload-ideas-{module_id}-{topic_id}", use_container_width=True):
+        if st.button("Reload saved", key=f"studio-reload-ideas-{module_id}-{topic_id}", width="stretch"):
             latest = get_carousel_content(module_id, topic_id) or {}
             source = latest.get("draft") or latest.get("published") or default_carousel_payload(topic)
-            st.session_state[working_key] = normalize_carousel_payload(source, topic)
-            st.session_state.pop(screen_key, None)
+            reloaded = normalize_carousel_payload(source, topic)
+            st.session_state[working_key] = reloaded
+            reloaded_options = [card["editor_id"] for card in reloaded.get("cards", [])] + ["synthesis"]
+            next_screen = str(selected_block) if str(selected_block) in reloaded_options else reloaded_options[0]
+            _queue_widget_selection(screen_key, next_screen)
             st.rerun()
     with open_col:
         is_live = module_id in MODULES and any(item.get("id") == topic_id for item in MODULES[module_id].get("topics", []))
-        if st.button("Open lesson →", key=f"studio-open-lesson-{module_id}-{topic_id}", disabled=not is_live, use_container_width=True):
+        if st.button("Open lesson →", key=f"studio-open-lesson-{module_id}-{topic_id}", disabled=not is_live, width="stretch"):
             navigate("topic", module_id, topic_id)
 
 
@@ -4897,12 +5147,12 @@ def _render_content_studio_checks(user: dict, snapshot: dict[str, dict]) -> None
         )
         save_col, publish_col = st.columns(2)
         with save_col:
-            save_pressed = st.form_submit_button("Save checks draft", use_container_width=True)
+            save_pressed = st.form_submit_button("Save checks draft", width="stretch")
         with publish_col:
             publish_pressed = st.form_submit_button(
                 "Publish checks",
                 type="primary",
-                use_container_width=True,
+                width="stretch",
                 disabled=not is_admin,
             )
 
@@ -4945,6 +5195,23 @@ def _validate_uploaded_resource(uploaded_file) -> tuple[str, str, bytes] | tuple
         st.error("This file is larger than 25 MB. Use a smaller file or an external document link instead.")
         return None, None, None
     mime_type = str(uploaded_file.type or RESOURCE_UPLOAD_TYPES[extension])
+    return file_name, mime_type, file_bytes
+
+
+def _validate_uploaded_image(uploaded_file, *, png_only: bool = False) -> tuple[str, str, bytes] | tuple[None, None, None]:
+    if uploaded_file is None:
+        return None, None, None
+    file_name = _safe_resource_filename(uploaded_file.name)
+    extension = Path(file_name).suffix.lower()
+    allowed = {".png": "image/png"} if png_only else IMAGE_UPLOAD_TYPES
+    if extension not in allowed:
+        st.error("Only PNG images are supported here." if png_only else "Supported images: PNG, JPG/JPEG and WebP.")
+        return None, None, None
+    file_bytes = uploaded_file.getvalue()
+    if len(file_bytes) > MAX_CMS_IMAGE_BYTES:
+        st.error("This image is larger than 8 MB. Use a smaller image.")
+        return None, None, None
+    mime_type = str(uploaded_file.type or allowed[extension])
     return file_name, mime_type, file_bytes
 
 
@@ -5063,13 +5330,14 @@ def _render_content_studio_resource_manager(
     else:
         st.info("No files have been uploaded here yet.")
 
-    with st.expander("＋ Add file"):
+    allow_multiple = scope_type == "tool"
+    with st.expander("＋ Add files" if allow_multiple else "＋ Add file"):
         with st.form(f"studio-resource-add-{scope_type}-{scope_id}"):
             a, b = st.columns([1, 2])
             with a:
                 new_kind = st.text_input("Type / label", value=default_kind, key=f"studio-new-resource-kind-{scope_type}-{scope_id}")
                 new_sort = st.number_input(
-                    "Sort order",
+                    "Starting sort order",
                     min_value=0,
                     max_value=10000,
                     value=(len(resources) + 1) * 10,
@@ -5077,38 +5345,57 @@ def _render_content_studio_resource_manager(
                     key=f"studio-new-resource-sort-{scope_type}-{scope_id}",
                 )
             with b:
-                new_title = st.text_input("Title", key=f"studio-new-resource-title-{scope_type}-{scope_id}")
+                new_title = st.text_input(
+                    "Title" + (" (optional for multiple files)" if allow_multiple else ""),
+                    key=f"studio-new-resource-title-{scope_type}-{scope_id}",
+                )
             new_description = st.text_area("Description", height=80, key=f"studio-new-resource-description-{scope_type}-{scope_id}")
             upload = st.file_uploader(
-                "File",
+                "Files" if allow_multiple else "File",
                 type=[ext.lstrip(".") for ext in RESOURCE_UPLOAD_TYPES],
+                accept_multiple_files=allow_multiple,
                 key=f"studio-new-resource-upload-{scope_type}-{scope_id}",
             )
-            add_file = st.form_submit_button("Upload file", type="primary")
+            add_file = st.form_submit_button("Upload resources" if allow_multiple else "Upload file", type="primary")
         if add_file:
-            if not new_title.strip():
+            uploads = list(upload or []) if allow_multiple else ([upload] if upload is not None else [])
+            if not uploads:
+                st.error("Choose at least one file to upload.")
+            elif len(uploads) == 1 and not new_title.strip():
                 st.error("Add a title for the file.")
-            elif upload is None:
-                st.error("Choose a file to upload.")
             else:
-                file_name, mime_type, file_bytes = _validate_uploaded_resource(upload)
-                if file_bytes is not None:
-                    save_cms_resource_file(
-                        uuid4().hex,
-                        scope_type=scope_type,
-                        scope_id=scope_id,
-                        module_id=module_id,
-                        resource_kind=new_kind.strip() or default_kind,
-                        title=new_title.strip(),
-                        description=new_description.strip(),
-                        file_name=file_name,
-                        mime_type=mime_type,
-                        file_data=file_bytes,
-                        sort_order=int(new_sort),
-                        updated_by=user["user_id"],
+                prepared = []
+                for offset, uploaded in enumerate(uploads):
+                    file_name, mime_type, file_bytes = _validate_uploaded_resource(uploaded)
+                    if file_bytes is None:
+                        prepared = []
+                        break
+                    title_value = (
+                        new_title.strip()
+                        if len(uploads) == 1
+                        else Path(file_name).stem.replace("-", " ").replace("_", " ").strip().title()
                     )
+                    prepared.append((file_name, mime_type, file_bytes, title_value, int(new_sort) + offset * 10))
+                if prepared:
+                    for file_name, mime_type, file_bytes, title_value, sort_value in prepared:
+                        save_cms_resource_file(
+                            uuid4().hex,
+                            scope_type=scope_type,
+                            scope_id=scope_id,
+                            module_id=module_id,
+                            resource_kind=new_kind.strip() or default_kind,
+                            title=title_value,
+                            description=new_description.strip(),
+                            file_name=file_name,
+                            mime_type=mime_type,
+                            file_data=file_bytes,
+                            sort_order=sort_value,
+                            updated_by=user["user_id"],
+                        )
                     _clear_content_studio_caches()
-                    _content_studio_flash("File uploaded and made available to learners.")
+                    _content_studio_flash(
+                        f"{len(prepared)} resource{'s' if len(prepared) != 1 else ''} uploaded and made available to learners."
+                    )
                     st.rerun()
 
 
@@ -5140,17 +5427,76 @@ def _render_content_studio_convince_files(user: dict, snapshot: dict[str, dict])
     )
 
 
+def _render_content_studio_tool_image_manager(user: dict, tool_id: str, tool: dict) -> None:
+    st.markdown("#### Tool image")
+    st.caption("Optional. The image is only shown inside the learner-facing ‘What is inside’ expander.")
+    image_rows = _resource_files_for("tool_image", tool_id, include_archived=True)
+    active = next((row for row in image_rows if not row.get("archived")), None)
+    if active:
+        record = _cached_resource_file(active["resource_id"])
+        if record and record.get("file_data"):
+            st.image(record["file_data"], caption=str(record.get("description") or record.get("title") or "Tool image"), width=420)
+    with st.form(f"studio-tool-image-{tool_id}"):
+        alt_text = st.text_input(
+            "Image description",
+            value=str(active.get("description") or tool.get("title") or "Tool image") if active else str(tool.get("title") or "Tool image"),
+        )
+        upload = st.file_uploader(
+            "Add or replace image",
+            type=["png", "jpg", "jpeg", "webp"],
+            key=f"studio-tool-image-upload-{tool_id}",
+        )
+        save_image = st.form_submit_button("Save tool image", type="primary", disabled=upload is None)
+    if save_image and upload is not None:
+        file_name, mime_type, file_bytes = _validate_uploaded_image(upload)
+        if file_bytes is not None:
+            resource_id = active["resource_id"] if active else uuid4().hex
+            links = _tool_lesson_links(tool)
+            module_id = links[0][0] if links else str(tool.get("module_id") or "")
+            save_cms_resource_file(
+                resource_id,
+                scope_type="tool_image",
+                scope_id=tool_id,
+                module_id=module_id,
+                resource_kind="Tool image",
+                title=str(tool.get("title") or tool_id),
+                description=alt_text.strip() or str(tool.get("title") or "Tool image"),
+                file_name=file_name,
+                mime_type=mime_type,
+                file_data=file_bytes,
+                sort_order=10,
+                updated_by=user["user_id"],
+            )
+            _clear_content_studio_caches()
+            _content_studio_flash("Tool image saved.")
+            st.rerun()
+    if active and st.button("Remove tool image", key=f"studio-tool-image-remove-{tool_id}"):
+        set_cms_resource_archived(active["resource_id"], True, user["user_id"])
+        _clear_content_studio_caches()
+        _content_studio_flash("Tool image removed.")
+        st.rerun()
+
+
 def _render_content_studio_tools(user: dict, snapshot: dict[str, dict]) -> None:
     if not is_administrator(user):
         st.info("Only administrators can manage tools and tool files.")
         return
     st.markdown("### Tools & files")
     st.caption(
-        "Edit House of Tools metadata here. Tool definitions use drafts and publishing; downloadable files are managed separately and become available immediately when uploaded."
+        "Edit House of Tools metadata, link each tool to one or more learning steps, attach several resource files, and optionally add an image shown only inside ‘What is inside’. Multiple tools can link to the same learning step."
     )
     tools = _admin_tools_snapshot()
     tool_ids = list(tools)
-    active_module_ids = [module_id for module_id, module in snapshot.items() if not module.get("_cms_archived")]
+
+    lesson_choices: dict[str, str] = {}
+    for module_id, module in snapshot.items():
+        if module.get("_cms_archived"):
+            continue
+        for lesson in module.get("topics", []):
+            if lesson.get("_cms_archived") or lesson.get("level") == "Convince":
+                continue
+            key = f"{module_id}::{lesson['id']}"
+            lesson_choices[key] = f"{module.get('short_title', module_id)} · {lesson.get('level', '')} · {lesson.get('title', lesson['id'])}"
 
     if tool_ids:
         tool_id = st.selectbox(
@@ -5163,39 +5509,30 @@ def _render_content_studio_tools(user: dict, snapshot: dict[str, dict]) -> None:
         )
         tool = tools[tool_id]
         archived = bool(tool.get("_cms_archived"))
-        module_options = list(active_module_ids)
-        current_module = str(tool.get("module_id") or "")
-        if current_module and current_module not in module_options:
-            module_options.append(current_module)
-        if not module_options:
-            module_options = [""]
+        current_keys = [f"{module_id}::{lesson_id}" for module_id, lesson_id in _tool_lesson_links(tool)]
+        for key in current_keys:
+            if key not in lesson_choices:
+                module_id, lesson_id = key.split("::", 1)
+                lesson_choices[key] = f"{module_id} · {lesson_id} · unavailable/archived"
 
         with st.form(f"studio-tool-form-{tool_id}"):
             title = st.text_input("Tool title", value=tool.get("title", ""), key=f"studio-tool-title-{tool_id}")
-            a, b, c = st.columns(3)
-            with a:
-                module_id = st.selectbox(
-                    "Module",
-                    module_options,
-                    index=module_options.index(current_module) if current_module in module_options else 0,
-                    format_func=lambda value: snapshot.get(value, {}).get("short_title", value or "No module"),
-                    key=f"studio-tool-module-{tool_id}",
-                )
-            with b:
-                topic_id = st.text_input(
-                    "Related lesson ID (optional)",
-                    value=str(tool.get("topic_id") or ""),
-                    key=f"studio-tool-topic-{tool_id}",
-                )
-            with c:
-                sort_order = st.number_input(
-                    "Sort order",
-                    min_value=0,
-                    max_value=10000,
-                    value=int(tool.get("_cms_sort_order") or 0),
-                    step=10,
-                    key=f"studio-tool-sort-{tool_id}",
-                )
+            linked_keys = st.multiselect(
+                "Linked learning step(s)",
+                list(lesson_choices),
+                default=[key for key in current_keys if key in lesson_choices],
+                format_func=lambda value: lesson_choices.get(value, value),
+                help="A learning step can have several tools, and the same tool may be linked to several steps.",
+                key=f"studio-tool-links-{tool_id}",
+            )
+            sort_order = st.number_input(
+                "Sort order",
+                min_value=0,
+                max_value=10000,
+                value=int(tool.get("_cms_sort_order") or 0),
+                step=10,
+                key=f"studio-tool-sort-{tool_id}",
+            )
             d, e = st.columns(2)
             with d:
                 duration = st.text_input("Suggested time", value=tool.get("duration", ""), key=f"studio-tool-duration-{tool_id}")
@@ -5209,6 +5546,12 @@ def _render_content_studio_tools(user: dict, snapshot: dict[str, dict]) -> None:
                 height=140,
                 key=f"studio-tool-steps-{tool_id}",
             )
+            selected_links = [
+                {"module_id": key.split("::", 1)[0], "lesson_id": key.split("::", 1)[1]}
+                for key in linked_keys
+            ]
+            primary_module = selected_links[0]["module_id"] if selected_links else ""
+            primary_lesson = selected_links[0]["lesson_id"] if selected_links else ""
             payload = copy.deepcopy(tool)
             for key in list(payload):
                 if str(key).startswith("_cms_"):
@@ -5217,8 +5560,9 @@ def _render_content_studio_tools(user: dict, snapshot: dict[str, dict]) -> None:
                 {
                     "id": tool_id,
                     "title": title.strip(),
-                    "module_id": module_id,
-                    "topic_id": topic_id.strip(),
+                    "module_id": primary_module,
+                    "topic_id": primary_lesson,
+                    "lesson_links": selected_links,
                     "duration": duration.strip(),
                     "format": format_label.strip(),
                     "description": description.strip(),
@@ -5228,12 +5572,12 @@ def _render_content_studio_tools(user: dict, snapshot: dict[str, dict]) -> None:
             )
             save_col, publish_col = st.columns(2)
             with save_col:
-                save_tool = st.form_submit_button("Save tool draft", use_container_width=True)
+                save_tool = st.form_submit_button("Save tool draft", width="stretch")
             with publish_col:
                 publish_tool = st.form_submit_button(
                     "Publish tool",
                     type="primary",
-                    use_container_width=True,
+                    width="stretch",
                     disabled=archived,
                 )
         if save_tool:
@@ -5248,7 +5592,7 @@ def _render_content_studio_tools(user: dict, snapshot: dict[str, dict]) -> None:
                 st.error("Add a tool title.")
             else:
                 _content_studio_publish_tool(tool_id, payload, int(sort_order), user["user_id"])
-                _content_studio_flash("Tool published.")
+                _content_studio_flash("Tool published. Its learning-step links are now live.")
                 st.rerun()
 
         with st.expander("Archive / restore tool"):
@@ -5262,64 +5606,70 @@ def _render_content_studio_tools(user: dict, snapshot: dict[str, dict]) -> None:
                 if st.button("Archive tool", key=f"studio-tool-archive-{tool_id}"):
                     set_cms_tool_archived(tool_id, True, user["user_id"], sort_order=int(tool.get("_cms_sort_order") or 0))
                     _clear_content_studio_caches()
-                    _content_studio_flash("Tool archived. It is no longer shown in the House of Tools.")
+                    _content_studio_flash("Tool archived. It is no longer shown in the House of Tools or linked learning steps.")
                     st.rerun()
 
+        _render_content_studio_tool_image_manager(user, tool_id, tool)
+        links = _tool_lesson_links(tool)
+        resource_module_id = links[0][0] if links else str(tool.get("module_id") or "")
         _render_content_studio_resource_manager(
             user,
             scope_type="tool",
             scope_id=tool_id,
-            module_id=str(tool.get("module_id") or ""),
-            heading=f"Files for {tool['title']}",
-            default_kind="Template",
+            module_id=resource_module_id,
+            heading=f"Resources for {tool['title']} · multiple files allowed",
+            default_kind="Resource",
         )
     else:
         st.info("No tools exist yet.")
 
     with st.expander("＋ Add tool"):
-        if not active_module_ids:
-            st.info("Create a module before adding a tool.")
-        else:
-            with st.form("studio-add-tool"):
-                new_tool_id = st.text_input("Tool ID", placeholder="new-tool", key="studio-new-tool-id").strip().lower()
-                new_tool_title = st.text_input("Tool title", placeholder="New tool", key="studio-new-tool-title")
-                new_tool_module = st.selectbox(
-                    "Module",
-                    active_module_ids,
-                    format_func=lambda value: snapshot[value]["short_title"],
-                    key="studio-new-tool-module",
-                )
-                new_tool_sort = st.number_input(
-                    "Sort order",
-                    min_value=0,
-                    max_value=10000,
-                    value=(len(tools) + 1) * 10,
-                    step=10,
-                    key="studio-new-tool-sort",
-                )
-                add_tool = st.form_submit_button("Create tool draft", type="primary")
-            if add_tool:
-                if not _valid_content_id(new_tool_id):
-                    st.error("Use a lowercase tool ID with letters, numbers and hyphens.")
-                elif new_tool_id in tools:
-                    st.error("That tool ID already exists.")
-                elif not new_tool_title.strip():
-                    st.error("Add a tool title.")
-                else:
-                    payload = {
-                        "id": new_tool_id,
-                        "title": new_tool_title.strip(),
-                        "module_id": new_tool_module,
-                        "topic_id": "",
-                        "duration": "",
-                        "format": "Downloadable resource",
-                        "description": "",
-                        "outcome": "",
-                        "steps": [],
-                    }
-                    _content_studio_save_tool(new_tool_id, payload, int(new_tool_sort), user["user_id"])
-                    _content_studio_flash("New tool draft created. Add details and files before publishing it.")
-                    st.rerun()
+        with st.form("studio-add-tool"):
+            new_tool_id = st.text_input("Tool ID", placeholder="new-tool", key="studio-new-tool-id").strip().lower()
+            new_tool_title = st.text_input("Tool title", placeholder="New tool", key="studio-new-tool-title")
+            new_tool_links = st.multiselect(
+                "Linked learning step(s)",
+                list(lesson_choices),
+                format_func=lambda value: lesson_choices.get(value, value),
+                help="Optional. You can publish an unlinked House of Tools item and link it later.",
+                key="studio-new-tool-links",
+            )
+            new_tool_sort = st.number_input(
+                "Sort order",
+                min_value=0,
+                max_value=10000,
+                value=(len(tools) + 1) * 10,
+                step=10,
+                key="studio-new-tool-sort",
+            )
+            add_tool = st.form_submit_button("Create tool draft", type="primary")
+        if add_tool:
+            if not _valid_content_id(new_tool_id):
+                st.error("Use a lowercase tool ID with letters, numbers and hyphens.")
+            elif new_tool_id in tools:
+                st.error("That tool ID already exists.")
+            elif not new_tool_title.strip():
+                st.error("Add a tool title.")
+            else:
+                links = [
+                    {"module_id": key.split("::", 1)[0], "lesson_id": key.split("::", 1)[1]}
+                    for key in new_tool_links
+                ]
+                payload = {
+                    "id": new_tool_id,
+                    "title": new_tool_title.strip(),
+                    "module_id": links[0]["module_id"] if links else "",
+                    "topic_id": links[0]["lesson_id"] if links else "",
+                    "lesson_links": links,
+                    "duration": "",
+                    "format": "Downloadable resource",
+                    "description": "",
+                    "outcome": "",
+                    "steps": [],
+                }
+                _content_studio_save_tool(new_tool_id, payload, int(new_tool_sort), user["user_id"])
+                _content_studio_flash("New tool draft created. Add details, resources and an optional image before publishing it.")
+                st.rerun()
 
 
 def _render_content_studio_people(user: dict) -> None:
@@ -5377,7 +5727,7 @@ def _render_content_studio_revisions() -> None:
         }
         for item in revisions
     ]
-    st.dataframe(rows, use_container_width=True, hide_index=True)
+    st.dataframe(rows, width="stretch", hide_index=True)
 
 
 def _render_content_studio_status(snapshot: dict[str, dict]) -> None:
@@ -5402,6 +5752,96 @@ def _render_content_studio_status(snapshot: dict[str, dict]) -> None:
     else:
         st.success("Production content, uploaded resources and learner data are stored in PostgreSQL. CMS tables are protected by the same server-only RLS/PostgREST hardening as the rest of the app.")
 
+
+
+CONTENT_STUDIO_SECTION_SLUGS = {
+    "Modules & lessons": "structure",
+    "Ideas & content": "ideas",
+    "Checks & quizzes": "checks",
+    "Convince files": "convince",
+    "Tools & files": "tools",
+    "Users & roles": "users",
+    "Revision history": "revisions",
+    "Deployment": "deployment",
+}
+CONTENT_STUDIO_SLUG_SECTIONS = {value: key for key, value in CONTENT_STUDIO_SECTION_SLUGS.items()}
+
+
+def _query_param_text(name: str) -> str:
+    try:
+        value = st.query_params.get(name, "")
+    except Exception:
+        return ""
+    if isinstance(value, (list, tuple)):
+        value = value[-1] if value else ""
+    return str(value or "").strip()
+
+
+def _set_query_param(name: str, value: str | None) -> None:
+    try:
+        clean_value = str(value or "").strip()
+        current_value = _query_param_text(name)
+        if clean_value:
+            if current_value != clean_value:
+                st.query_params[name] = clean_value
+        elif current_value and name in st.query_params:
+            del st.query_params[name]
+    except Exception:
+        # URL state is a convenience only; Session State remains the source of
+        # truth if a deployment uses an older Streamlit query-param runtime.
+        pass
+
+
+def _sync_content_studio_section_query() -> None:
+    section = str(st.session_state.get("content-studio-section") or "")
+    _set_query_param("admin", CONTENT_STUDIO_SECTION_SLUGS.get(section))
+
+
+def _sync_content_studio_structure_query() -> None:
+    view = str(st.session_state.get("content-studio-structure") or "Modules")
+    _set_query_param("admin_view", "lessons" if view == "Lessons" else "modules")
+
+
+def _queue_widget_selection(widget_key: str, value: str) -> None:
+    """Queue a widget value for the next rerun.
+
+    Streamlit does not allow Session State for an already-instantiated widget to
+    be changed later in the same run. Structural idea actions therefore queue
+    the next carousel screen instead of mutating the selectbox key directly.
+    """
+    st.session_state[f"_pending-widget::{widget_key}"] = value
+
+
+def _apply_queued_widget_selection(widget_key: str, valid_values: list[str]) -> bool:
+    pending_key = f"_pending-widget::{widget_key}"
+    if pending_key not in st.session_state:
+        return False
+    value = str(st.session_state.pop(pending_key) or "")
+    if value in valid_values:
+        st.session_state[widget_key] = value
+        return True
+    return False
+
+
+def _persist_idea_draft_if_valid(
+    module_id: str,
+    topic_id: str,
+    payload: dict,
+    topic: dict,
+    user_id: str,
+    working_key: str,
+) -> bool:
+    """Persist structural/image changes immediately without publishing them."""
+    cards = payload.get("cards") if isinstance(payload, dict) else []
+    if not isinstance(cards, list) or any(not str(card.get("title") or "").strip() for card in cards if isinstance(card, dict)):
+        return False
+    cleaned = normalize_carousel_payload(payload, topic)
+    if len(cleaned.get("cards") or []) != len(cards):
+        return False
+    save_carousel_draft(module_id, topic_id, cleaned, user_id)
+    st.session_state[working_key] = cleaned
+    _clear_content_studio_caches()
+    return True
 
 def page_admin(user):
     """Content studio for editors plus administrator-only publishing and resource management."""
@@ -5449,33 +5889,62 @@ def page_admin(user):
     c.metric("Idea cards", idea_count)
     d.metric("Managed files", resource_count)
 
-    tab_names = ["Modules & lessons", "Ideas & content", "Checks & quizzes"]
+    section_options = ["Modules & lessons", "Ideas & content", "Checks & quizzes"]
     if is_administrator(user):
-        tab_names.extend(["Convince files", "Tools & files", "Users & roles", "Revision history", "Deployment"])
-    tabs = st.tabs(tab_names)
+        section_options.extend(["Convince files", "Tools & files", "Users & roles", "Revision history", "Deployment"])
 
-    with tabs[0]:
-        module_tab, lesson_tab = st.tabs(["Modules", "Lessons"])
-        with module_tab:
-            _render_content_studio_modules(user, snapshot)
-        with lesson_tab:
+    # Keep the Content Studio on the section the user is actually working in.
+    # st.tabs always jumps back to its first tab after many reruns and computes
+    # hidden tabs as well; a stateful segmented navigation is more predictable
+    # for editors and avoids unnecessary database/UI work.
+    url_section = CONTENT_STUDIO_SLUG_SECTIONS.get(_query_param_text("admin"))
+    if url_section in section_options:
+        st.session_state["content-studio-section"] = url_section
+    elif st.session_state.get("content-studio-section") not in section_options:
+        st.session_state["content-studio-section"] = section_options[0]
+
+    active_section = st.segmented_control(
+        "Content studio section",
+        section_options,
+        key="content-studio-section",
+        on_change=_sync_content_studio_section_query,
+        width="stretch",
+        label_visibility="collapsed",
+    ) or section_options[0]
+
+    if active_section == "Modules & lessons":
+        structure_options = ["Modules", "Lessons"]
+        url_view = _query_param_text("admin_view")
+        desired_view = "Lessons" if url_view == "lessons" else "Modules" if url_view == "modules" else ""
+        if desired_view in structure_options:
+            st.session_state["content-studio-structure"] = desired_view
+        elif st.session_state.get("content-studio-structure") not in structure_options:
+            st.session_state["content-studio-structure"] = "Modules"
+        structure_view = st.segmented_control(
+            "Structure section",
+            structure_options,
+            key="content-studio-structure",
+            on_change=_sync_content_studio_structure_query,
+            label_visibility="collapsed",
+        ) or "Modules"
+        if structure_view == "Lessons":
             _render_content_studio_lessons(user, snapshot)
-    with tabs[1]:
+        else:
+            _render_content_studio_modules(user, snapshot)
+    elif active_section == "Ideas & content":
         _render_content_studio_ideas(user, snapshot)
-    with tabs[2]:
+    elif active_section == "Checks & quizzes":
         _render_content_studio_checks(user, snapshot)
-
-    if is_administrator(user):
-        with tabs[3]:
-            _render_content_studio_convince_files(user, snapshot)
-        with tabs[4]:
-            _render_content_studio_tools(user, snapshot)
-        with tabs[5]:
-            _render_content_studio_people(user)
-        with tabs[6]:
-            _render_content_studio_revisions()
-        with tabs[7]:
-            _render_content_studio_status(snapshot)
+    elif active_section == "Convince files" and is_administrator(user):
+        _render_content_studio_convince_files(user, snapshot)
+    elif active_section == "Tools & files" and is_administrator(user):
+        _render_content_studio_tools(user, snapshot)
+    elif active_section == "Users & roles" and is_administrator(user):
+        _render_content_studio_people(user)
+    elif active_section == "Revision history" and is_administrator(user):
+        _render_content_studio_revisions()
+    elif active_section == "Deployment" and is_administrator(user):
+        _render_content_studio_status(snapshot)
 
 
 def page_public_result(token: str):
