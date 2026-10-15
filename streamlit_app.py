@@ -106,7 +106,9 @@ PRIVACY_POLICY_EFFECTIVE_DATE = "21 September 2026"
 # cached initializer so Streamlit Cloud cannot reuse a pre-migration cache entry
 # after a hot deployment.
 DATABASE_SCHEMA_VERSION = "2026-10-01-content-studio-media-links-v3"
-APP_BUILD_ID = "2026-10-01-tools-search-alphabetical-v6"
+MOSAIC_NEWSLETTER_URL = "https://mosaic-europe.eu/mosaic/sign-up"
+LANDING_STORY_VIDEO_URL = "https://www.youtube.com/watch?v=ppWj_rbRfxw"
+APP_BUILD_ID = "2026-10-01-landing-story-convince-v8"
 
 # Prefer a dedicated square favicon, then the approved MOSAIC logo. The globe
 # is retained only as a last-resort fallback when neither image is installed.
@@ -452,6 +454,14 @@ html, body, [class*="css"] { font-family: Poppins, "Segoe UI", Arial, sans-serif
 .m-shard.s5 { background:var(--m-lime); width:29%; height:24%; right:2%; bottom:4%; clip-path:polygon(0 6%,100% 0,89% 100%,15% 86%); }
 .m-shard.s6 { background:var(--m-wine); width:18%; height:28%; left:61%; bottom:0; clip-path:polygon(11% 0,100% 17%,63% 100%,0 76%); }
 .m-shard.s7 { background:var(--m-grey); width:20%; height:18%; left:1%; top:0; clip-path:polygon(0 0,100% 0,61% 100%,0 67%); }
+
+[class*="st-key-ground_story"] { margin:1.65rem 0 2.35rem; padding:clamp(1.2rem,3vw,2rem); border:1px solid #d7dfda; border-radius:24px; background:linear-gradient(135deg,#f2f7f4 0%,#fff 58%,#faf5ea 100%); box-shadow:0 8px 24px rgba(33,72,58,.05); overflow:hidden; }
+[class*="st-key-ground_story"] [data-testid="stHorizontalBlock"] { align-items:center; }
+.m-ground-story-copy { padding:.2rem .2rem .2rem 0; }
+.m-ground-story-copy h2 { margin:.42rem 0 .7rem; font-size:clamp(1.6rem,3vw,2.35rem); line-height:1.08; letter-spacing:-.025em; }
+.m-ground-story-copy p { margin:.35rem 0; color:#555b57; line-height:1.7; font-size:.96rem; }
+.m-ground-story-note { display:inline-flex; align-items:center; gap:.4rem; margin-top:.85rem; padding:.3rem .65rem; border:1px solid #d5dfd9; border-radius:999px; background:rgba(255,255,255,.84); color:var(--m-green); font-size:.74rem; font-weight:700; }
+[class*="st-key-ground_story"] [data-testid="stVideo"] { border-radius:18px; overflow:hidden; box-shadow:0 10px 28px rgba(31,55,46,.12); background:#111; }
 
 .m-section-title { margin:2.1rem 0 .8rem; }
 .m-section-title h2 { margin:0; font-size:1.48rem; letter-spacing:-.02em; }
@@ -1004,6 +1014,10 @@ def _lesson_content_payload(lesson: dict) -> dict:
     return payload
 
 
+def _is_under_construction(item: dict | None) -> bool:
+    return str((item or {}).get("status") or "").strip().casefold() == "under construction"
+
+
 def _normalise_module_payload(module_id: str, payload: dict | None) -> dict:
     data = copy.deepcopy(payload or {})
     data.pop("topics", None)
@@ -1042,6 +1056,10 @@ def _normalise_lesson_payload(lesson_id: str, payload: dict | None) -> dict:
     data["summary"] = str(data.get("summary") or "").strip()
     data["body"] = str(data.get("body") or "").strip()
     data["prompt"] = str(data.get("prompt") or "").strip()
+    sources = data.get("sources") or []
+    if isinstance(sources, str):
+        sources = [line.strip() for line in sources.splitlines() if line.strip()]
+    data["sources"] = [str(item).strip() for item in sources if str(item).strip()]
     if not isinstance(data.get("theory_cards"), list):
         data["theory_cards"] = []
     checks = data.get("self_check") or []
@@ -1085,6 +1103,7 @@ def _normalise_tool_payload(tool_id: str, payload: dict | None) -> dict:
     data["duration"] = str(data.get("duration") or "").strip()
     data["format"] = str(data.get("format") or "Downloadable resource").strip()
     data["description"] = str(data.get("description") or "").strip()
+    data["status"] = str(data.get("status") or "Available").strip()
     data["outcome"] = str(data.get("outcome") or "").strip()
     steps = data.get("steps") or []
     if isinstance(steps, str):
@@ -1932,7 +1951,7 @@ def render_sidebar(user: dict | None):
                 st.progress(ratio, text=f"{done}/{total} learning steps")
                 if st.button("Module overview", width="stretch"):
                     navigate("module", module_id)
-            if module.get("convince") or _resource_files_for("convince", module_id):
+            if module is not None and module.get("status") == "Available":
                 if st.button("Convince: evidence & resources", key=f"side-convince-{module_id}", width="stretch", type="primary" if route == "convince" else "secondary"):
                     navigate("convince", module_id)
 
@@ -1961,6 +1980,23 @@ def page_home(user: dict | None):
         """,
         unsafe_allow_html=True,
     )
+
+    with st.container(key="ground_story"):
+        story_copy, story_media = st.columns([0.9, 1.35], gap="large", vertical_alignment="center")
+        with story_copy:
+            st.markdown(
+                """
+                <div class="m-ground-story-copy">
+                    <div class="m-kicker">Story from on the ground</div>
+                    <h2>See the learning in a real-world context</h2>
+                    <p>MOSAIC Learn is rooted in the realities of land-use decisions. This featured story brings the people, places and practical challenges behind the learning into view.</p>
+                    <div class="m-ground-story-note">Field perspective · featured story</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+        with story_media:
+            st.video(LANDING_STORY_VIDEO_URL)
 
     st.markdown("<div class='m-section-title'><h2>Find your starting point</h2><p>The MOSAIC learning loop can move between collaboration, understanding and future action.</p></div>", unsafe_allow_html=True)
     cols = st.columns(3)
@@ -2054,8 +2090,15 @@ def page_catalogue(user: dict | None):
             if module["status"] == "Available":
                 if st.button("Open module →", key=f"open-{module_id}", type="primary", width="stretch"):
                     navigate("module", module_id)
+            elif _is_under_construction(module):
+                st.link_button(
+                    f"{module.get('short_title', 'Module')} · under construction · subscribe →",
+                    MOSAIC_NEWSLETTER_URL,
+                    type="primary",
+                    width="stretch",
+                )
             else:
-                st.button("Coming soon", key=f"soon-{module_id}", disabled=True, width="stretch")
+                st.button(str(module.get("status") or "Coming soon"), key=f"soon-{module_id}", disabled=True, width="stretch")
 
     guide_image = asset_image_html(
         "starting-point-heron.png",
@@ -2498,6 +2541,8 @@ def _all_tools_zip_cached() -> bytes:
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         for tool_id, tool in TOOL_DEFINITIONS.items():
+            if _is_under_construction(tool):
+                continue
             added_file = False
             for meta in _resource_files_for("tool", tool_id):
                 record = _cached_resource_file(meta["resource_id"])
@@ -2525,6 +2570,18 @@ def all_tools_zip() -> bytes:
 def page_tools(user):
     selected_tool_id = st.session_state.get("tool_id")
     selected_tool = TOOL_DEFINITIONS.get(selected_tool_id)
+
+    if selected_tool and _is_under_construction(selected_tool):
+        st.warning(f"{selected_tool.get('title', 'This tool')} is under construction and is not yet available.")
+        st.link_button(
+            "Subscribe to the MOSAIC newsletter for updates →",
+            MOSAIC_NEWSLETTER_URL,
+            type="primary",
+            width="content",
+        )
+        if st.button("← Back to all tools", key="under-construction-tool-back"):
+            navigate("tools")
+        return
 
     st.markdown(
         """
@@ -2641,7 +2698,7 @@ def page_tools(user):
                     <div class='m-kicker'>{escape(str(module_label))}</div>
                     <h3>{escape(tool['title'])}</h3>
                     <p>{escape(tool['description'])}</p>
-                    <div class='m-tool-meta'><span>{escape(tool.get('format',''))}</span><span>{escape(tool.get('duration',''))}</span></div>
+                    <div class='m-tool-meta'><span>{escape(tool.get('format',''))}</span><span>{escape(tool.get('duration',''))}</span>{"<span>Under construction</span>" if _is_under_construction(tool) else ""}</div>
                 </div>
                 """,
                 unsafe_allow_html=True,
@@ -2675,17 +2732,25 @@ def page_tools(user):
                     for resource_name in resource_names:
                         st.markdown(f"- {escape(resource_name)}")
 
-            resource_data, resource_name, resource_mime, resource_count = _tool_download_payload(tool_id, tool)
-            st.download_button(
-                "Download resources ↓",
-                data=resource_data,
-                file_name=resource_name,
-                mime=resource_mime,
-                key=f"download-tool-resources-{tool_id}",
-                type="primary" if tool_id == selected_tool_id else "secondary",
-                width="stretch",
-            )
-            st.caption(f"{resource_count} resource{'s' if resource_count != 1 else ''} included")
+            if _is_under_construction(tool):
+                st.link_button(
+                    f"{tool.get('title', 'Tool')} · under construction · subscribe →",
+                    MOSAIC_NEWSLETTER_URL,
+                    type="secondary",
+                    width="stretch",
+                )
+            else:
+                resource_data, resource_name, resource_mime, resource_count = _tool_download_payload(tool_id, tool)
+                st.download_button(
+                    "Download resources ↓",
+                    data=resource_data,
+                    file_name=resource_name,
+                    mime=resource_mime,
+                    key=f"download-tool-resources-{tool_id}",
+                    type="primary" if tool_id == selected_tool_id else "secondary",
+                    width="stretch",
+                )
+                st.caption(f"{resource_count} resource{'s' if resource_count != 1 else ''} included")
 
 
 def page_learning(user):
@@ -2795,7 +2860,7 @@ def render_module_modes(user, module_id: str):
     topics = learning_topics(module)
     understand = [t for t in topics if t.get("level") == "Understand"]
     apply_steps = [t for t in topics if t.get("level") == "Apply"]
-    convince_available = bool(module.get("convince") or _resource_files_for("convince", module_id))
+    convince_has_content = bool(module.get("convince") or _resource_files_for("convince", module_id))
     cols = st.columns(3)
     cards = [
         ("understand", "01", "Understand", "Read the concepts in short, easy-to-scan steps and check your understanding.", f"{len(understand)} learning step{'s' if len(understand) != 1 else ''}"),
@@ -2805,20 +2870,17 @@ def render_module_modes(user, module_id: str):
             "03",
             "Convince",
             "Browse examples, arguments, policy briefs and evidence you can reuse with other people."
-            if convince_available
-            else "This part of the source material is still under construction.",
-            "Resource hub · not graded" if convince_available else "Under construction",
+            if convince_has_content
+            else "Open the communication and evidence shelf for this module. Approved resources can be added here as they become available.",
+            "Resource hub · not graded",
         ),
     ]
     for col, (cls, num, title, text, note) in zip(cols, cards):
         with col:
             st.markdown(f"<div class='m-mode-card {cls}'><div class='m-mode-num'>{num}</div><h3>{title}</h3><p>{text}</p><span class='m-mode-note'>{note}</span></div>", unsafe_allow_html=True)
             if cls == "convince":
-                if convince_available:
-                    if st.button("Open evidence & resources →", key=f"mode-convince-{module_id}", width="stretch", type="secondary"):
-                        navigate("convince", module_id)
-                else:
-                    st.caption("Available after the source section is completed.")
+                if st.button("Open evidence & resources →", key=f"mode-convince-{module_id}", width="stretch", type="secondary"):
+                    navigate("convince", module_id)
             else:
                 candidates = understand if cls == "understand" else apply_steps
                 if candidates and st.button(f"Go to {title.lower()} →", key=f"mode-{cls}-{module_id}", width="stretch"):
@@ -2910,7 +2972,16 @@ def page_module(user):
     )
 
     if module["status"] != "Available":
-        st.info("This module is a catalogue placeholder in the current draft; lesson content has not been migrated.")
+        if _is_under_construction(module):
+            st.warning("This module is under construction and is not yet available for learners.")
+            st.link_button(
+                "Subscribe to the MOSAIC newsletter for updates →",
+                MOSAIC_NEWSLETTER_URL,
+                type="primary",
+                width="content",
+            )
+        else:
+            st.info("This module is not available yet.")
         return
 
     st.markdown("<div class='m-section-title'><h2>Three ways to use this module</h2><p>Understand and Apply form the learning journey. Convince is intentionally different: it is an evidence and communication shelf you can open whenever you need it.</p></div>", unsafe_allow_html=True)
@@ -2935,16 +3006,16 @@ def page_module(user):
     if role_name in ROLE_CALLOUTS:
         st.markdown(f"<div class='m-role-callout'><strong>For your role</strong><br>{escape(ROLE_CALLOUTS[role_name])}</div>", unsafe_allow_html=True)
 
-    render_building_blocks(module)
-    render_module_routes(user, module_id)
-
     st.markdown("<div class='m-section-title'><h2>Understand & apply</h2><p>This is the tracked learning path. Theory is broken into short cards; practical steps add tools, examples, self-checks and reflections.</p></div>", unsafe_allow_html=True)
     render_module_path(user, module_id)
 
-    if module.get("convince") or _resource_files_for("convince", module_id):
-        st.markdown("<div class='m-section-title'><h2>Need to bring someone else with you?</h2><p>Open Convince for downloadable briefs, decks, evidence and communication resources rather than another lesson.</p></div>", unsafe_allow_html=True)
-        if st.button("Open Convince: files & resources →", key=f"module-convince-bottom-{module_id}", type="secondary"):
-            navigate("convince", module_id)
+    # Orientation content follows the lesson list so learners see the learning path first.
+    render_building_blocks(module)
+    render_module_routes(user, module_id)
+
+    st.markdown("<div class='m-section-title'><h2>Need to bring someone else with you?</h2><p>Open Convince for briefs, evidence and communication resources. Administrators can keep adding approved files to this shelf over time.</p></div>", unsafe_allow_html=True)
+    if st.button("Open Convince: files & resources →", key=f"module-convince-bottom-{module_id}", type="secondary"):
+        navigate("convince", module_id)
     if module.get("source_note"):
         st.caption(module["source_note"])
 
@@ -3107,7 +3178,14 @@ def render_learning_extras(module_id: str, topic, *, include_practice: bool = Tr
             unsafe_allow_html=True,
         )
         with st.container(key=f"tool_action_{module_id}_{topic['id']}_{tool_id}"):
-            if st.button(
+            if _is_under_construction(tool):
+                st.link_button(
+                    f"{title} is under construction · subscribe for updates →",
+                    MOSAIC_NEWSLETTER_URL,
+                    type="primary",
+                    width="stretch",
+                )
+            elif st.button(
                 f"Open {title} resources →",
                 key=f"open-tool-{module_id}-{topic['id']}-{tool_id}",
                 type="primary",
@@ -3190,6 +3268,15 @@ def page_topic(user):
         navigate("catalogue")
         return
     module = MODULES[module_id]
+    if _is_under_construction(module):
+        st.warning("This module is under construction and is not yet available for learners.")
+        st.link_button(
+            "Subscribe to the MOSAIC newsletter for updates →",
+            MOSAIC_NEWSLETTER_URL,
+            type="primary",
+            width="content",
+        )
+        return
     topic = topic_by_id(module_id, topic_id) if topic_id else None
     if not topic:
         navigate("module", module_id)
@@ -3287,6 +3374,15 @@ def page_topic(user):
                     _save_progress(user["user_id"], module_id, topic["id"], completed=False)
                     st.rerun()
 
+    sources = [str(item).strip() for item in (topic.get("sources") or []) if str(item).strip()]
+    if sources:
+        st.markdown(
+            "<div class='m-section-title'><h2>Sources & evidence</h2><p>References supporting this lesson.</p></div>",
+            unsafe_allow_html=True,
+        )
+        for source in sources:
+            st.markdown(f"- {escape(source)}")
+
     with st.container(key="lesson_footer"):
         prev_col, mid_col, next_col = st.columns([1, 1, 1], gap="medium")
         with prev_col:
@@ -3306,11 +3402,17 @@ def page_convince(user):
         navigate("catalogue")
         return
     module = MODULES[module_id]
+    if _is_under_construction(module):
+        st.warning("This module is under construction and is not yet available for learners.")
+        st.link_button(
+            "Subscribe to the MOSAIC newsletter for updates →",
+            MOSAIC_NEWSLETTER_URL,
+            type="primary",
+            width="content",
+        )
+        return
     resource_files = _resource_files_for("convince", module_id)
     hub = module.get("convince") or {}
-    if not hub and not resource_files:
-        navigate("module", module_id)
-        return
 
     hub_title = str(hub.get("title") or f"Convince resources for {module['short_title']}")
     hub_intro = str(
@@ -4470,7 +4572,7 @@ def _render_content_studio_modules(user: dict, snapshot: dict[str, dict]) -> Non
                     key=f"studio-module-minutes-{module_id}",
                 )
             with d:
-                status_options = ["Available", "Coming soon"]
+                status_options = ["Available", "Under construction", "Coming soon"]
                 if module.get("status") not in status_options:
                     status_options.append(str(module.get("status") or "Available"))
                 status = st.selectbox(
@@ -4583,6 +4685,11 @@ def _render_content_studio_modules(user: dict, snapshot: dict[str, dict]) -> Non
                     key="new-module-track",
                 )
                 new_description = st.text_area("Description", height=90, key="studio-new-module-description")
+                new_status = st.selectbox(
+                    "Learner status",
+                    ["Available", "Under construction", "Coming soon"],
+                    key="studio-new-module-status",
+                )
                 new_minutes = st.number_input("Estimated minutes", min_value=0, max_value=5000, value=30, key="studio-new-module-minutes")
                 new_sort = st.number_input("Sort order", min_value=0, max_value=10000, value=(len(snapshot) + 1) * 10, step=10, key="studio-new-module-sort")
                 add_module = st.form_submit_button("Create module draft", type="primary")
@@ -4603,7 +4710,7 @@ def _render_content_studio_modules(user: dict, snapshot: dict[str, dict]) -> Non
                         "track_icon": icon_map[new_track],
                         "description": new_description.strip(),
                         "estimated_minutes": int(new_minutes),
-                        "status": "Available",
+                        "status": new_status,
                         "eyebrow": "Learning journey",
                         "source_note": "",
                         "learning_outcomes": [],
@@ -4681,6 +4788,13 @@ def _render_content_studio_lessons(user: dict, snapshot: dict[str, dict]) -> Non
             summary = st.text_area("Summary", value=lesson.get("summary", ""), height=90, key=f"studio-lesson-summary-{module_id}-{lesson_id}")
             body = st.text_area("Intro / body text", value=lesson.get("body", ""), height=150, key=f"studio-lesson-body-{module_id}-{lesson_id}")
             prompt = st.text_area("Reflection prompt", value=lesson.get("prompt", ""), height=90, key=f"studio-lesson-prompt-{module_id}-{lesson_id}")
+            sources_text = st.text_area(
+                "Sources · one reference per line",
+                value="\n".join(lesson.get("sources") or []),
+                height=130,
+                help="Add scientific papers, reports, datasets or other references supporting this lesson.",
+                key=f"studio-lesson-sources-{module_id}-{lesson_id}",
+            )
             payload = _lesson_content_payload(lesson)
             payload.update(
                 {
@@ -4691,6 +4805,7 @@ def _render_content_studio_lessons(user: dict, snapshot: dict[str, dict]) -> Non
                     "summary": summary.strip(),
                     "body": body.strip(),
                     "prompt": prompt.strip(),
+                    "sources": [line.strip() for line in sources_text.splitlines() if line.strip()],
                 }
             )
             save_col, publish_col = st.columns(2)
@@ -4757,6 +4872,11 @@ def _render_content_studio_lessons(user: dict, snapshot: dict[str, dict]) -> Non
                 new_level = st.selectbox("Level", ["Understand", "Apply"], key=f"new-lesson-level-{module_id}")
                 new_minutes = st.number_input("Minutes", min_value=0, max_value=1000, value=10, key=f"new-lesson-minutes-{module_id}")
                 new_summary = st.text_area("Summary", height=80, key=f"new-lesson-summary-{module_id}")
+                new_sources = st.text_area(
+                    "Sources · one reference per line",
+                    height=110,
+                    key=f"new-lesson-sources-{module_id}",
+                )
                 new_sort = st.number_input(
                     "Sort order",
                     min_value=0,
@@ -4782,6 +4902,7 @@ def _render_content_studio_lessons(user: dict, snapshot: dict[str, dict]) -> Non
                         "summary": new_summary.strip(),
                         "body": "",
                         "prompt": "",
+                        "sources": [line.strip() for line in new_sources.splitlines() if line.strip()],
                         "theory_cards": [
                             {
                                 "label": "Core idea",
@@ -5486,7 +5607,7 @@ def _render_content_studio_convince_files(user: dict, snapshot: dict[str, dict])
     )
     existing_hub = bool(snapshot[module_id].get("convince"))
     if not existing_hub:
-        st.info("This module has no Convince text section in content.py. Uploading a file will still enable a simple Convince resource hub for the module.")
+        st.info("This module has no custom Convince introduction yet, so learners will see the standard resource-hub introduction. You can still add files here at any time.")
     _render_content_studio_resource_manager(
         user,
         scope_type="convince",
@@ -5570,7 +5691,7 @@ def _render_content_studio_tools(user: dict, snapshot: dict[str, dict]) -> None:
         "Edit House of Tools metadata, link each tool to one or more learning steps, attach several resource files, and optionally add an image shown only inside ‘What is inside’. Multiple tools can link to the same learning step."
     )
     tools = _admin_tools_snapshot()
-    tool_ids = list(tools)
+    tool_ids = sorted(tools, key=lambda value: str(tools[value].get("title") or value).casefold())
 
     lesson_choices: dict[str, str] = {}
     for module_id, module in snapshot.items():
@@ -5609,14 +5730,18 @@ def _render_content_studio_tools(user: dict, snapshot: dict[str, dict]) -> None:
                 help="A learning step can have several tools, and the same tool may be linked to several steps.",
                 key=f"studio-tool-links-{tool_id}",
             )
-            sort_order = st.number_input(
-                "Sort order",
-                min_value=0,
-                max_value=10000,
-                value=int(tool.get("_cms_sort_order") or 0),
-                step=10,
-                key=f"studio-tool-sort-{tool_id}",
+            status = st.selectbox(
+                "Learner status",
+                ["Available", "Under construction"],
+                index=["Available", "Under construction"].index(
+                    str(tool.get("status") or "Available")
+                    if str(tool.get("status") or "Available") in {"Available", "Under construction"}
+                    else "Available"
+                ),
+                help="Under-construction tools cannot be opened or downloaded by learners; they are directed to the MOSAIC newsletter sign-up instead.",
+                key=f"studio-tool-status-{tool_id}",
             )
+            sort_order = int(tool.get("_cms_sort_order") or 0)
             d, e = st.columns(2)
             with d:
                 duration = st.text_input("Suggested time", value=tool.get("duration", ""), key=f"studio-tool-duration-{tool_id}")
@@ -5647,6 +5772,7 @@ def _render_content_studio_tools(user: dict, snapshot: dict[str, dict]) -> None:
                     "module_id": primary_module,
                     "topic_id": primary_lesson,
                     "lesson_links": selected_links,
+                    "status": status,
                     "duration": duration.strip(),
                     "format": format_label.strip(),
                     "description": description.strip(),
@@ -5718,13 +5844,10 @@ def _render_content_studio_tools(user: dict, snapshot: dict[str, dict]) -> None:
                 help="Optional. You can publish an unlinked House of Tools item and link it later.",
                 key="studio-new-tool-links",
             )
-            new_tool_sort = st.number_input(
-                "Sort order",
-                min_value=0,
-                max_value=10000,
-                value=(len(tools) + 1) * 10,
-                step=10,
-                key="studio-new-tool-sort",
+            new_tool_status = st.selectbox(
+                "Learner status",
+                ["Available", "Under construction"],
+                key="studio-new-tool-status",
             )
             add_tool = st.form_submit_button("Create tool draft", type="primary")
         if add_tool:
@@ -5745,13 +5868,14 @@ def _render_content_studio_tools(user: dict, snapshot: dict[str, dict]) -> None:
                     "module_id": links[0]["module_id"] if links else "",
                     "topic_id": links[0]["lesson_id"] if links else "",
                     "lesson_links": links,
+                    "status": new_tool_status,
                     "duration": "",
                     "format": "Downloadable resource",
                     "description": "",
                     "outcome": "",
                     "steps": [],
                 }
-                _content_studio_save_tool(new_tool_id, payload, int(new_tool_sort), user["user_id"])
+                _content_studio_save_tool(new_tool_id, payload, (len(tools) + 1) * 10, user["user_id"])
                 _content_studio_flash("New tool draft created. Add details, resources and an optional image before publishing it.")
                 st.rerun()
 
