@@ -4,12 +4,13 @@ import base64
 import copy
 import hashlib
 import io
+import json
 import re
 import zipfile
 from uuid import uuid4
 from pathlib import Path
 from html import escape
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 
 import streamlit as st
 import streamlit.components.v1 as components
@@ -44,6 +45,7 @@ from db import (
     get_cms_lesson,
     get_cms_module,
     get_cms_story,
+    get_cms_library_resource,
     get_cms_resource_file,
     get_cms_tool,
     get_community_activity,
@@ -61,6 +63,7 @@ from db import (
     list_cms_lessons,
     list_cms_modules,
     list_cms_stories,
+    list_cms_library_resources,
     list_cms_resource_files,
     list_cms_tools,
     list_published_carousels,
@@ -70,6 +73,7 @@ from db import (
     publish_cms_lesson,
     publish_cms_module,
     publish_cms_story,
+    publish_cms_library_resource,
     publish_cms_tool,
     record_privacy_acceptance,
     request_mycelium_connection,
@@ -79,6 +83,7 @@ from db import (
     save_cms_lesson_draft,
     save_cms_module_draft,
     save_cms_story_draft,
+    save_cms_library_resource_draft,
     save_cms_resource_file,
     save_cms_tool_draft,
     save_topic_progress,
@@ -86,6 +91,7 @@ from db import (
     set_cms_lesson_archived,
     set_cms_module_archived,
     set_cms_story_archived,
+    set_cms_library_resource_archived,
     set_cms_resource_archived,
     set_cms_tool_archived,
     toggle_community_reaction,
@@ -110,10 +116,12 @@ PRIVACY_POLICY_EFFECTIVE_DATE = "21 September 2026"
 # Change this value whenever init_db() gains a migration. It is passed into the
 # cached initializer so Streamlit Cloud cannot reuse a pre-migration cache entry
 # after a hot deployment.
-DATABASE_SCHEMA_VERSION = "2026-10-19-stories-v1"
+DATABASE_SCHEMA_VERSION = "2026-10-19-tool-formats-previews-v2"
 MOSAIC_NEWSLETTER_URL = "https://mosaic-europe.eu/mosaic/sign-up"
+TOOL_FORMATS = ("Workshop", "Website", "Model", "Digital tool")
+TOOL_FORMAT_ICONS = {"Workshop": "◫", "Website": "↗", "Model": "⌁", "Digital tool": "◇"}
 LANDING_STORY_VIDEO_URL = "https://www.youtube.com/watch?v=ppWj_rbRfxw"
-APP_BUILD_ID = "2026-10-19-v8-all-modules-v81"
+APP_BUILD_ID = "2026-10-19-tool-formats-previews-v10"
 
 
 DEFAULT_STORIES = {
@@ -280,6 +288,11 @@ def _cached_cms_stories() -> list[dict]:
     return list_cms_stories()
 
 
+@st.cache_data(ttl=45, show_spinner=False)
+def _cached_cms_library_resources() -> list[dict]:
+    return list_cms_library_resources()
+
+
 @st.cache_data(ttl=60, show_spinner=False)
 def _cached_resource_files(scope_type: str | None = None, scope_id: str | None = None, include_archived: bool = False) -> list[dict]:
     return list_cms_resource_files(scope_type, scope_id, include_archived=include_archived)
@@ -300,6 +313,7 @@ def _clear_content_studio_caches() -> None:
     _cached_cms_lessons.clear()
     _cached_cms_tools.clear()
     _cached_cms_stories.clear()
+    _cached_cms_library_resources.clear()
     _cached_resource_files.clear()
     _cached_resource_file.clear()
     _cached_content_revisions.clear()
@@ -870,6 +884,63 @@ html, body, [class*="css"] { font-family: Poppins, "Segoe UI", Arial, sans-serif
     .st-key-theory_navigation [data-testid="stButton"] button{min-width:0;width:100%;font-size:.86rem}
     .m-mini-mark{width:30px;height:30px}.m-brandbar{margin-bottom:.8rem}.m-brand-logo{height:36px;max-width:150px}.m-brand-learn{padding-left:.5rem}.m-brand-home{gap:.5rem}
 }
+
+/* Learning hub, resource library and repository-style tools. */
+.m-learning-hub-hero { margin:.25rem 0 1rem; padding:1.25rem 1.35rem; border:1px solid var(--m-line); border-radius:20px; background:linear-gradient(135deg,#fbfbf8 0%,#f3f7f4 100%); }
+.m-learning-hub-hero h1 { margin:.25rem 0 .45rem; font-size:clamp(1.9rem,4vw,3rem); letter-spacing:-.03em; }
+.m-learning-hub-hero p { max-width:820px; margin:0; color:var(--m-muted); line-height:1.6; }
+.m-learning-summary { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:.7rem; margin:.8rem 0 1.1rem; }
+.m-learning-summary > div { padding:.8rem .9rem; border:1px solid var(--m-line); border-radius:14px; background:#fff; }
+.m-learning-summary strong { display:block; font-size:1.35rem; }
+.m-learning-summary span { color:var(--m-muted); font-size:.78rem; }
+.m-reflection-card { margin:.65rem 0; padding:.9rem 1rem; border:1px solid var(--m-line); border-left:4px solid var(--m-ochre); border-radius:0 14px 14px 0; background:#fff; }
+.m-reflection-card .meta { color:var(--m-muted); font-size:.72rem; margin-bottom:.32rem; }
+.m-reflection-card h4 { margin:0 0 .3rem; }
+.m-reflection-card p { margin:0; color:#4f544f; line-height:1.58; white-space:pre-wrap; }
+.m-library-hero, .m-tools-repo-hero { margin:.25rem 0 1rem; padding:1.3rem 1.4rem; border:1px solid var(--m-line); border-radius:20px; background:linear-gradient(135deg,#fff 0%,#f5f7f3 100%); }
+.m-library-hero h1, .m-tools-repo-hero h1 { margin:.25rem 0 .4rem; font-size:clamp(1.9rem,4vw,3rem); letter-spacing:-.03em; }
+.m-library-hero p, .m-tools-repo-hero p { max-width:850px; margin:0; color:var(--m-muted); line-height:1.6; }
+.m-resource-library-card { height:100%; box-sizing:border-box; padding:1rem 1.05rem; border:1px solid var(--m-line); border-radius:16px; background:#fff; }
+.m-tool-repo-card { height:100%; box-sizing:border-box; border:1px solid var(--m-line); border-top:5px solid var(--m-ochre); border-radius:18px; background:#fff; overflow:hidden; }
+.m-tool-repo-card.workshop { border-top-color:var(--m-ochre); }
+.m-tool-repo-card.website { border-top-color:var(--m-blue); }
+.m-tool-repo-card.model { border-top-color:var(--m-green); }
+.m-tool-repo-card.digital-tool { border-top-color:var(--m-wine); }
+.m-tool-card-media { height:150px; background:#f5f5f2; overflow:hidden; }
+.m-tool-card-media img { width:100%; height:100%; object-fit:cover; display:block; }
+.m-tool-card-placeholder { display:flex; align-items:center; justify-content:center; background:linear-gradient(135deg,#f7f7f4,#eceee9); }
+.m-tool-card-placeholder span { font-size:3rem; color:#9a9b95; }
+.m-tool-card-body { padding:1rem 1.05rem 1.05rem; }
+.m-tool-format-line { display:flex; align-items:center; gap:.42rem; margin:0 0 .45rem; font-size:.72rem; font-weight:800; letter-spacing:.055em; text-transform:uppercase; color:var(--m-grey); }
+.m-tool-format-icon { display:inline-flex; width:26px; height:26px; align-items:center; justify-content:center; border-radius:8px; background:#f0f1ed; font-size:.88rem; }
+.m-resource-library-card h3, .m-tool-repo-card h3 { margin:.42rem 0 .4rem; font-size:1.08rem; line-height:1.28; }
+.m-resource-library-card p, .m-tool-repo-card p { margin:.2rem 0 .7rem; color:var(--m-muted); font-size:.85rem; line-height:1.52; }
+.m-resource-badges, .m-tool-filter-tags { display:flex; gap:.35rem; flex-wrap:wrap; margin:.35rem 0 .45rem; }
+.m-resource-badge, .m-tool-filter-tag { display:inline-flex; align-items:center; padding:.2rem .5rem; border-radius:999px; font-size:.68rem; font-weight:700; background:#f0f1ed; color:#5c625d; }
+.m-resource-badge.mosaic { background:var(--m-green-10); color:var(--m-green); }
+.m-resource-badge.external { background:var(--m-blue-10); color:var(--m-blue); }
+.m-resource-library-card a { color:#1769aa !important; text-decoration:none !important; font-weight:700; }
+.m-resource-library-card a:hover { text-decoration:underline !important; }
+.m-tool-detail { margin:.3rem 0 1rem; padding:1.35rem 1.45rem; border:1px solid var(--m-line); border-radius:22px; background:#fff; }
+.m-tool-detail h1 { margin:.35rem 0 .55rem; font-size:clamp(1.9rem,4vw,3rem); letter-spacing:-.03em; }
+.m-tool-detail p { max-width:850px; color:var(--m-muted); line-height:1.65; }
+.m-tool-detail-meta { display:flex; gap:.45rem; flex-wrap:wrap; margin:.75rem 0 0; }
+.m-tool-detail-meta span { padding:.28rem .58rem; border-radius:999px; background:#f1f2ee; font-size:.72rem; font-weight:650; }
+.m-tool-detail.workshop { border-top:6px solid var(--m-ochre); }
+.m-tool-detail.website { border-top:6px solid var(--m-blue); }
+.m-tool-detail.model { border-top:6px solid var(--m-green); }
+.m-tool-detail.digital-tool { border-top:6px solid var(--m-wine); }
+.m-tool-detail-placeholder { min-height:230px; border:1px solid var(--m-line); border-radius:20px; display:flex; flex-direction:column; gap:.5rem; align-items:center; justify-content:center; background:#f6f6f4; color:var(--m-muted); }
+.m-tool-detail-placeholder span { font-size:4rem; line-height:1; }
+.m-tool-detail-placeholder strong { font-size:.8rem; letter-spacing:.08em; text-transform:uppercase; }
+.m-tool-detail-placeholder.workshop { background:var(--m-ochre-10); color:var(--m-ochre); }
+.m-tool-detail-placeholder.website { background:var(--m-blue-10); color:var(--m-blue); }
+.m-tool-detail-placeholder.model { background:var(--m-green-10); color:var(--m-green); }
+.m-tool-detail-placeholder.digital-tool { background:var(--m-wine-10); color:var(--m-wine); }
+.m-linked-resource { margin:.55rem 0; padding:.7rem .8rem; border-left:3px solid var(--m-blue); background:var(--m-blue-10); border-radius:0 10px 10px 0; }
+.m-linked-resource a { color:#1769aa !important; font-weight:700; text-decoration:none !important; }
+@media (max-width:900px){ .m-learning-summary{grid-template-columns:1fr;} }
+
 </style>
 """,
     unsafe_allow_html=True,
@@ -1175,6 +1246,10 @@ def _normalise_lesson_payload(lesson_id: str, payload: dict | None) -> dict:
     if isinstance(sources, str):
         sources = [line.strip() for line in sources.splitlines() if line.strip()]
     data["sources"] = [str(item).strip() for item in sources if str(item).strip()]
+    resource_ids = data.get("resource_ids") or []
+    if isinstance(resource_ids, str):
+        resource_ids = [item.strip() for item in re.split(r"[,\n]", resource_ids) if item.strip()]
+    data["resource_ids"] = list(dict.fromkeys(str(item).strip() for item in resource_ids if str(item).strip()))
     if not isinstance(data.get("theory_cards"), list):
         data["theory_cards"] = []
     checks = data.get("self_check") or []
@@ -1216,10 +1291,20 @@ def _normalise_tool_payload(tool_id: str, payload: dict | None) -> dict:
         data["topic_id"] = links[0]["lesson_id"]
 
     data["duration"] = str(data.get("duration") or "").strip()
-    data["format"] = str(data.get("format") or "Downloadable resource").strip()
-    data["description"] = str(data.get("description") or "").strip()
+    # Older tool definitions used labels such as "worksheet" or "canvas".
+    # In the learner repository these are all workshop methods unless an admin
+    # explicitly publishes one of the other supported output formats.
+    raw_format = str(data.get("format") or data.get("tool_type") or "Workshop").strip()
+    format_lookup = {value.casefold(): value for value in TOOL_FORMATS}
+    data["format"] = format_lookup.get(raw_format.casefold(), "Workshop")
+    data["description"] = str(data.get("description") or data.get("outcome") or "").strip()
     data["status"] = str(data.get("status") or "Available").strip()
-    data["outcome"] = str(data.get("outcome") or "").strip()
+    data["website_url"] = str(data.get("website_url") or data.get("url") or "").strip()
+    data["preview_url"] = str(data.get("preview_url") or "").strip()
+    keywords = data.get("keywords") or []
+    if isinstance(keywords, str):
+        keywords = [item.strip() for item in re.split(r"[,\n]", keywords) if item.strip()]
+    data["keywords"] = list(dict.fromkeys(str(item).strip() for item in keywords if str(item).strip()))
     steps = data.get("steps") or []
     if isinstance(steps, str):
         steps = [line.strip() for line in steps.splitlines() if line.strip()]
@@ -1230,7 +1315,10 @@ def _normalise_tool_payload(tool_id: str, payload: dict | None) -> dict:
 
 
 def _admin_tools_snapshot() -> dict[str, dict]:
-    baseline = copy.deepcopy(_tool_definitions_baseline())
+    baseline = {
+        tool_id: _normalise_tool_payload(tool_id, payload)
+        for tool_id, payload in copy.deepcopy(_tool_definitions_baseline()).items()
+    }
     rows = {row["tool_id"]: row for row in _cached_cms_tools()}
     tool_ids = list(baseline)
     for tool_id in rows:
@@ -1249,6 +1337,56 @@ def _admin_tools_snapshot() -> dict[str, dict]:
         tool["_cms_published_at"] = row.get("published_at") or ""
         result[tool_id] = tool
     return dict(sorted(result.items(), key=lambda item: (int(item[1].get("_cms_sort_order") or 0), item[0])))
+
+
+def _normalise_library_resource_payload(resource_id: str, payload: dict | None) -> dict:
+    data = copy.deepcopy(payload or {})
+    data["id"] = resource_id
+    data["title"] = str(data.get("title") or resource_id).strip()
+    data["description"] = str(data.get("description") or "").strip()
+    origin = str(data.get("origin") or "MOSAIC content").strip()
+    data["origin"] = origin if origin in {"MOSAIC content", "External content"} else "MOSAIC content"
+    data["resource_type"] = str(data.get("resource_type") or "Report").strip()
+    data["authors"] = str(data.get("authors") or "").strip()
+    data["year"] = str(data.get("year") or "").strip()
+    data["source_url"] = str(data.get("source_url") or "").strip()
+    tags = data.get("tags") or []
+    if isinstance(tags, str):
+        tags = [item.strip() for item in re.split(r"[,\n]", tags) if item.strip()]
+    data["tags"] = list(dict.fromkeys(str(item).strip() for item in tags if str(item).strip()))
+    related = data.get("related_modules") or []
+    if isinstance(related, str):
+        related = [item.strip() for item in re.split(r"[,\n]", related) if item.strip()]
+    data["related_modules"] = list(dict.fromkeys(str(item).strip() for item in related if str(item).strip()))
+    return data
+
+
+def _admin_library_resource_snapshot() -> dict[str, dict]:
+    result: dict[str, dict] = {}
+    for index, row in enumerate(_cached_cms_library_resources(), start=1):
+        resource_id = str(row.get("resource_id") or "")
+        source = row.get("draft") or row.get("published") or {}
+        item = _normalise_library_resource_payload(resource_id, source)
+        item["_cms_archived"] = bool(row.get("archived"))
+        item["_cms_has_draft"] = bool(row.get("draft"))
+        item["_cms_has_published"] = bool(row.get("published"))
+        item["_cms_sort_order"] = int(row.get("sort_order") or index * 10)
+        item["_cms_updated_at"] = row.get("updated_at") or ""
+        item["_cms_published_at"] = row.get("published_at") or ""
+        result[resource_id] = item
+    return dict(sorted(result.items(), key=lambda kv: (int(kv[1].get("_cms_sort_order") or 0), kv[1].get("title", "").casefold())))
+
+
+def _published_library_resources() -> dict[str, dict]:
+    result: dict[str, dict] = {}
+    for row in _cached_cms_library_resources():
+        if row.get("archived") or not row.get("published"):
+            continue
+        resource_id = str(row.get("resource_id") or "")
+        item = _normalise_library_resource_payload(resource_id, row.get("published"))
+        item["_sort_order"] = int(row.get("sort_order") or 0)
+        result[resource_id] = item
+    return dict(sorted(result.items(), key=lambda kv: (int(kv[1].get("_sort_order") or 0), kv[1].get("title", "").casefold())))
 
 
 def _resource_files_for(scope_type: str, scope_id: str, *, include_archived: bool = False) -> list[dict]:
@@ -1450,7 +1588,10 @@ def apply_published_carousel_overrides() -> None:
 
 def apply_published_tool_content() -> None:
     """Overlay published tool metadata while keeping content.py as the safe fallback."""
-    baseline = copy.deepcopy(_tool_definitions_baseline())
+    baseline = {
+        tool_id: _normalise_tool_payload(tool_id, payload)
+        for tool_id, payload in copy.deepcopy(_tool_definitions_baseline()).items()
+    }
     rows = {row["tool_id"]: row for row in _cached_cms_tools()}
     tool_order = {tool_id: (index + 1) * 10 for index, tool_id in enumerate(baseline)}
     catalogue = baseline
@@ -1580,33 +1721,31 @@ def navigate(
     topic_id: str | None = None,
     tool_id: str | None = None,
 ):
-    """Single source of truth for navigation.
-
-    The first draft used a sidebar radio that overwrote button-triggered routes on
-    every rerun. This explicit router avoids that loop: only a navigation action
-    changes the route.
-    """
+    """Single source of truth for navigation and bookmarkable URLs."""
     st.session_state.route = route
     if module_id is not None:
-        st.session_state.module_id = module_id
+        if str(module_id).strip():
+            st.session_state.module_id = module_id
+        else:
+            st.session_state.pop("module_id", None)
     if topic_id is not None:
-        st.session_state.topic_id = topic_id
+        if str(topic_id).strip():
+            st.session_state.topic_id = topic_id
+        else:
+            st.session_state.pop("topic_id", None)
     elif route != "topic":
         st.session_state.pop("topic_id", None)
     if tool_id is not None:
-        st.session_state.tool_id = tool_id
+        if str(tool_id).strip():
+            st.session_state.tool_id = tool_id
+        else:
+            st.session_state.pop("tool_id", None)
+    elif route == "tools":
+        st.session_state.pop("tool_id", None)
     elif route != "tools":
         st.session_state.pop("tool_id", None)
 
-    # Make navigation bookmarkable and browser-history aware. Query parameters
-    # are the URL source of truth on the next run, while Session State keeps the
-    # current run responsive.
-    _write_route_query(
-        route,
-        module_id=module_id,
-        topic_id=topic_id,
-        tool_id=tool_id,
-    )
+    _write_route_query(route, module_id=module_id, topic_id=topic_id, tool_id=tool_id)
     st.rerun()
 
 
@@ -1991,8 +2130,8 @@ def render_sidebar(user: dict | None):
         items = [
             ("home", "⌂  Home"),
             ("our-story", "◌  Our story"),
-            ("catalogue", "▦  Modules"),
-            ("learning", "◔  My learning"),
+            ("catalogue", "▦  Learning"),
+            ("resources", "▤  Resources"),
             ("tools", "◇  Tools"),
             ("community", "✣  Community"),
         ]
@@ -2208,28 +2347,72 @@ def page_home(user: dict | None):
                     )
 
 
-def page_catalogue(user: dict | None):
-    st.markdown("<div class='m-kicker'>Catalogue</div>", unsafe_allow_html=True)
-    st.title("MOSAIC Learn modules")
-    st.caption("Follow the learning loop or open a module on its own when you need a specific method or explanation.")
+def _learning_reflection_items(user: dict) -> list[dict]:
+    reflections: list[dict] = []
+    for module_id, module in MODULES.items():
+        if module.get("status") != "Available":
+            continue
+        module_progress = _cached_progress(user["user_id"], module_id)
+        for topic in learning_topics(module):
+            saved = module_progress.get(topic["id"], {})
+            text = (saved.get("reflection") or "").strip()
+            if text:
+                reflections.append({
+                    "module_id": module_id,
+                    "module": module,
+                    "topic": topic,
+                    "text": text,
+                    "updated_at": saved.get("updated_at") or "",
+                })
+    reflections.sort(key=lambda item: item["updated_at"], reverse=True)
+    return reflections
 
-    cols = st.columns(3)
-    for idx, (module_id, module) in enumerate(MODULES.items()):
-        with cols[idx % 3]:
-            st.markdown(module_card_html(module_id, user["user_id"] if user else None), unsafe_allow_html=True)
-            if module["status"] == "Available":
-                if st.button("Open module →", key=f"open-{module_id}", type="primary", width="stretch"):
+
+def render_learning_overview(user: dict) -> None:
+    available = [(mid, m) for mid, m in MODULES.items() if m.get("status") == "Available"]
+    if not available:
+        st.info("No modules are available yet.")
+        return
+    st.markdown("<div class='m-section-title'><h2>My learning</h2><p>Continue active modules and see what is next without leaving the learning hub.</p></div>", unsafe_allow_html=True)
+    for module_id, module in available:
+        ratio, done, total = module_completion(user["user_id"], module_id)
+        next_topic_id = first_incomplete_topic(user["user_id"], module_id)
+        next_topic = topic_by_id(module_id, next_topic_id) if next_topic_id else None
+        with st.container(border=True):
+            a, b = st.columns([3.4, 1], vertical_alignment="center")
+            with a:
+                st.markdown(f"<div class='m-kicker'>{escape(module['track'])} · {module['estimated_minutes']} min</div>", unsafe_allow_html=True)
+                st.subheader(module["title"])
+                st.progress(ratio, text=f"{round(ratio * 100)}% complete · {done}/{total} learning steps")
+                if next_topic:
+                    st.caption(f"Next: {next_topic['level']} · {next_topic['title']} · {next_topic['minutes']} min")
+            with b:
+                if next_topic and st.button("Continue →", key=f"hub-continue-{module_id}", type="primary", width="stretch"):
+                    navigate("topic", module_id, next_topic_id)
+                if st.button("Module overview", key=f"hub-overview-{module_id}", width="stretch"):
                     navigate("module", module_id)
-            elif _is_under_construction(module):
-                st.link_button(
-                    f"{module.get('short_title', 'Module')} · under construction · subscribe →",
-                    MOSAIC_NEWSLETTER_URL,
-                    type="primary",
-                    width="stretch",
-                )
-            else:
-                st.button(str(module.get("status") or "Coming soon"), key=f"soon-{module_id}", disabled=True, width="stretch")
 
+
+def render_reflection_notebook(user: dict) -> None:
+    st.markdown("<div class='m-section-title'><h2>Reflection notebook</h2><p>Everything you save while learning, together in one place and still private to you.</p></div>", unsafe_allow_html=True)
+    reflections = _learning_reflection_items(user)
+    if not reflections:
+        st.info("You have not saved any reflections yet. Add one from a learning step and it will appear here.")
+        return
+    module_choices = ["All modules"] + list(dict.fromkeys(item["module"]["short_title"] for item in reflections))
+    selected_module = st.selectbox("Show reflections from", module_choices, key="learning-reflection-filter")
+    shown = [item for item in reflections if selected_module == "All modules" or item["module"]["short_title"] == selected_module]
+    for idx, item in enumerate(shown):
+        date_text = str(item["updated_at"])[:10]
+        st.markdown(
+            f"<div class='m-reflection-card'><div class='meta'><strong>{escape(item['module']['short_title'])}</strong> · {escape(item['topic']['level'])} · {escape(date_text)}</div><h4>{escape(item['topic']['title'])}</h4><p>{escape(item['text'])}</p></div>",
+            unsafe_allow_html=True,
+        )
+        if st.button("Open learning step →", key=f"learning-reflection-open-{item['module_id']}-{item['topic']['id']}-{idx}"):
+            navigate("topic", item["module_id"], item["topic"]["id"])
+
+
+def _render_starting_point_guide_catalogue() -> None:
     guide_image = asset_image_html(
         "starting-point-heron.png",
         alt="A heron standing among reeds and their reflections in the water",
@@ -2254,84 +2437,91 @@ def page_catalogue(user: dict | None):
             """,
             unsafe_allow_html=True,
         )
-
         starting_paths = [
-            (
-                "drivers",
-                "◎",
-                "Learning",
-                "Why is this happening?",
-                "Discover the drivers, relationships and feedbacks shaping the system.",
-            ),
-            (
-                "policy-lab",
-                "◫",
-                "Community",
-                "How can people move forward together?",
-                "Bring together people, organisations and perspectives around a shared challenge.",
-            ),
-            (
-                "future-pathways",
-                "↝",
-                "Empowerment",
-                "What future do we want to create?",
-                "Explore desirable futures and practical pathways towards them.",
-            ),
+            ("drivers", "◎", "Learning", "Why is this happening?", "Discover the drivers, relationships and feedbacks shaping the system."),
+            ("policy-lab", "◫", "Community", "How can people move forward together?", "Bring together people, organisations and perspectives around a shared challenge."),
+            ("future-pathways", "↝", "Empowerment", "What future do we want to create?", "Explore desirable futures and practical pathways towards them."),
         ]
         choice_cols = st.columns(3, gap="medium")
         for col, (module_id, icon, track, question, description) in zip(choice_cols, starting_paths):
             with col:
                 with st.container(key=f"catalogue_start_choice_{module_id}"):
                     st.markdown(
-                        f"""
-                        <div class="m-start-choice {track.lower()}">
-                            <div class="m-start-icon" aria-hidden="true">{icon}</div>
-                            <h4>{escape(question)}</h4>
-                            <p>{escape(description)}</p>
-                        </div>
-                        """,
+                        f"<div class='m-start-choice {track.lower()}'><div class='m-start-icon' aria-hidden='true'>{icon}</div><h4>{escape(question)}</h4><p>{escape(description)}</p></div>",
                         unsafe_allow_html=True,
                     )
-                    if st.button(
-                        "Choose this question",
-                        key=f"starting-point-{module_id}",
-                        width="stretch",
-                    ):
+                    if st.button("Choose this question", key=f"starting-point-{module_id}", width="stretch"):
                         st.session_state.catalogue_recommendation = module_id
-
+                        st.rerun()
         recommendation_id = st.session_state.get("catalogue_recommendation")
         if recommendation_id in MODULES:
             recommended = MODULES[recommendation_id]
             st.markdown(
-                f"""
-                <div class="m-start-recommendation">
-                    <div class="m-kicker">Your suggested starting point</div>
-                    <h3>{escape(recommended['short_title'])}</h3>
-                    <p>{escape(recommended['description'])}</p>
-                    <div class="m-module-meta">
-                        <span>{escape(recommended['track'])}</span><span>•</span><span>{recommended['estimated_minutes']} min</span>
-                    </div>
-                </div>
-                """,
+                f"<div class='m-start-recommendation'><div class='m-kicker'>Your suggested starting point</div><h3>{escape(recommended['short_title'])}</h3><p>{escape(recommended['description'])}</p><div class='m-module-meta'><span>{escape(recommended['track'])}</span><span>•</span><span>{recommended['estimated_minutes']} min</span></div></div>",
                 unsafe_allow_html=True,
             )
             open_col, reset_col = st.columns([1, 1])
             with open_col:
-                if st.button(
-                    "Open module →",
-                    key="open-recommended-module",
-                    type="primary",
-                    width="stretch",
-                ):
+                if st.button("Open module →", key="open-recommended-module", type="primary", width="stretch"):
                     navigate("module", recommendation_id)
             with reset_col:
-                if st.button(
-                    "Choose a different question",
-                    key="reset-recommendation",
-                    width="stretch",
-                ):
+                if st.button("Choose a different question", key="reset-recommendation", width="stretch"):
                     st.session_state.pop("catalogue_recommendation", None)
                     st.rerun()
+
+
+def page_catalogue(user: dict | None):
+    st.markdown(
+        """
+        <div class='m-learning-hub-hero'>
+            <div class='m-kicker'>MOSAIC Learn</div>
+            <h1>Learning</h1>
+            <p>Explore every module, continue where you left off, keep your reflections together and review your learning record from one place.</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    if user:
+        available = [(mid, m) for mid, m in MODULES.items() if m.get("status") == "Available"]
+        completed_steps = total_steps = 0
+        for module_id, _module in available:
+            _ratio, done, total = module_completion(user["user_id"], module_id)
+            completed_steps += done
+            total_steps += total
+        reflection_count = len(_learning_reflection_items(user))
+        st.markdown(
+            f"<div class='m-learning-summary'><div><strong>{len(MODULES)}</strong><span>modules in the catalogue</span></div><div><strong>{completed_steps}/{total_steps}</strong><span>learning steps completed</span></div><div><strong>{reflection_count}</strong><span>saved reflections</span></div></div>",
+            unsafe_allow_html=True,
+        )
+        options = ["Modules", "My learning", "Reflection notebook", "Results & sharing"]
+        if st.session_state.get("learning-hub-section") not in options:
+            st.session_state["learning-hub-section"] = "Modules"
+        section = st.segmented_control("Learning section", options, key="learning-hub-section", label_visibility="collapsed", width="stretch") or "Modules"
+        if section == "My learning":
+            render_learning_overview(user)
+            return
+        if section == "Reflection notebook":
+            render_reflection_notebook(user)
+            return
+        if section == "Results & sharing":
+            page_results(user, embedded=True)
+            return
+    else:
+        st.info("You can browse every module without signing in. Sign in when you want to save progress, reflections or results.")
+
+    st.markdown("<div class='m-section-title'><h2>All learning modules</h2><p>Start anywhere. Available modules open directly; modules under construction remain visible so you can see what is coming.</p></div>", unsafe_allow_html=True)
+    cols = st.columns(3)
+    for idx, (module_id, module) in enumerate(MODULES.items()):
+        with cols[idx % 3]:
+            st.markdown(module_card_html(module_id, user["user_id"] if user else None), unsafe_allow_html=True)
+            if module["status"] == "Available":
+                if st.button("Open module →", key=f"open-{module_id}", type="primary", width="stretch"):
+                    navigate("module", module_id)
+            elif _is_under_construction(module):
+                st.link_button(f"{module.get('short_title', 'Module')} · under construction · subscribe →", MOSAIC_NEWSLETTER_URL, type="secondary", width="stretch")
+            else:
+                st.button(str(module.get("status") or "Coming soon"), key=f"soon-{module_id}", disabled=True, width="stretch")
+    _render_starting_point_guide_catalogue()
 
 
 GLOSSARY_TERMS = [
@@ -2545,24 +2735,21 @@ def configured_tool_file(file_name: str):
 
 
 def tool_template_markdown(tool_id: str, tool: dict) -> str:
-    """Build a dependency-free worksheet learners can download and edit."""
+    """Build a simple dependency-free note for workshop tools when explicitly needed."""
     module = MODULES.get(tool.get("module_id")) or {"title": "MOSAIC Learn"}
     lines = [
         f"# {tool['title']}",
         "",
         f"**MOSAIC Learn module:** {module['title']}",
-        f"**Suggested time:** {tool['duration']}",
-        "",
-        tool["description"],
-        "",
-        "## What you will produce",
-        "",
-        tool["outcome"],
-        "",
-        "## How to use this template",
-        "",
+        f"**Format:** {tool.get('format') or 'Workshop'}",
     ]
-    lines.extend(f"{idx}. {step}" for idx, step in enumerate(tool["steps"], start=1))
+    if tool.get("duration"):
+        lines.extend([f"**Suggested time:** {tool['duration']}", ""])
+    if tool.get("description"):
+        lines.extend(["## Description", "", tool["description"], ""])
+    if tool.get("steps"):
+        lines.extend(["## How to use it", ""])
+        lines.extend(f"{idx}. {step}" for idx, step in enumerate(tool.get("steps") or [], start=1))
 
     if tool.get("kind") == "cld":
         lines.extend(
@@ -2688,8 +2875,7 @@ def _all_tools_zip_cached() -> bytes:
                 if file_path and not error:
                     archive.write(file_path, arcname=f"{tool_id}/{file_name}")
                     added_file = True
-            if not added_file:
-                archive.writestr(f"{tool_id}/{tool_id}.md", tool_template_markdown(tool_id, tool))
+            # Resources are optional; tools without files add nothing to the archive.
     return buffer.getvalue()
 
 
@@ -2697,230 +2883,372 @@ def all_tools_zip() -> bytes:
     return _all_tools_zip_cached()
 
 
-def page_tools(user):
-    selected_tool_id = st.session_state.get("tool_id")
-    selected_tool = TOOL_DEFINITIONS.get(selected_tool_id)
-
-    if selected_tool and _is_under_construction(selected_tool):
-        st.warning(f"{selected_tool.get('title', 'This tool')} is under construction and is not yet available.")
-        st.link_button(
-            "Subscribe to the MOSAIC newsletter for updates →",
-            MOSAIC_NEWSLETTER_URL,
-            type="primary",
-            width="content",
-        )
-        if st.button("← Back to all tools", key="under-construction-tool-back"):
-            navigate("tools")
-        return
-
+def page_resources(user: dict | None):
+    resources = _published_library_resources()
     st.markdown(
         """
-        <div class='m-tools-hero'>
-            <div class='m-kicker'>MOSAIC Learn</div>
-            <h1>House of Tools</h1>
-            <p>All the tools in one place - ready to help you reflect, plan, facilitate and move your land use decisions forward.</p>
+        <div class='m-library-hero'>
+            <div class='m-kicker'>Evidence & further reading</div>
+            <h1>Resources</h1>
+            <p>Search the reports, papers, PDFs and external sources used across MOSAIC Learn. Every item is clearly marked as MOSAIC content or external content.</p>
         </div>
         """,
         unsafe_allow_html=True,
     )
-
-    intro_col, download_col = st.columns([2.4, 1], vertical_alignment="center")
-    with intro_col:
-        st.markdown("### Download resources and make them yours")
-        st.caption("A tool can contain several downloadable resources. Administrators manage the files, learning-step links and optional tool image in the Content Studio.")
-    with download_col:
-        st.download_button(
-            "Download all resources (.zip)",
-            data=all_tools_zip(),
-            file_name="mosaic-house-of-tools-resources.zip",
-            mime="application/zip",
-            type="primary",
-            width="stretch",
-        )
-
-    st.markdown(
-        """
-        <div class="m-admin-note">
-            <strong>Not sure which tool to start with?</strong>
-            <p>Start with the learning modules. The lessons introduce the concepts first and point you to the tools that fit each learning step.</p>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-    if st.button("Explore the learning modules →", key="tools-start-with-learning", width="content"):
-        navigate("catalogue")
-
-    source_module_id = str(st.session_state.get("module_id") or "")
-    source_topic_id = str(st.session_state.get("topic_id") or "")
-    source_module = MODULES.get(source_module_id) if selected_tool else None
-    came_from_lesson = bool(
-        selected_tool
-        and source_module
-        and source_topic_id
-        and topic_by_id(source_module_id, source_topic_id)
-    )
-    if selected_tool and came_from_lesson:
-        st.info(f"You came here from **{source_module['short_title']}**. The **{selected_tool['title']}** resources are shown first.")
-        if st.button("← Return to the learning step", key="tools-return-to-topic"):
-            navigate("topic", source_module_id, source_topic_id)
-
-    search_query = st.text_input(
-        "Search tools",
-        key="tools-search-query",
-        placeholder="Search by tool name, purpose, output or module…",
-    ).strip()
-
-    all_tool_items = sorted(
-        TOOL_DEFINITIONS.items(),
-        key=lambda item: str(item[1].get("title") or item[0]).casefold(),
-    )
-    if search_query:
-        needle = search_query.casefold()
-        tool_items = []
-        for tool_id, tool in all_tool_items:
-            links = _tool_lesson_links(tool)
-            searchable = " ".join(
-                [
-                    str(tool.get("title") or ""),
-                    str(tool.get("description") or ""),
-                    str(tool.get("outcome") or ""),
-                    str(tool.get("format") or ""),
-                    str(tool.get("duration") or ""),
-                    _tool_module_label(tool),
-                    " ".join(f"{module_id} {topic_id}" for module_id, topic_id in links),
-                ]
-            ).casefold()
-            if needle in searchable:
-                tool_items.append((tool_id, tool))
-    else:
-        tool_items = list(all_tool_items)
-
-    # Keep the lesson-recommended tool first, while every other tool stays alphabetical.
-    if came_from_lesson and selected_tool_id:
-        tool_items.sort(
-            key=lambda item: (
-                item[0] != selected_tool_id,
-                str(item[1].get("title") or item[0]).casefold(),
-            )
-        )
-
-    if not TOOL_DEFINITIONS:
-        st.info("No published tools are available yet.")
+    if not resources:
+        st.info("No resources have been published in the library yet. Administrators can add PDFs and source links from the Content Studio.")
+        st.markdown("Browse the wider [MOSAIC Knowledge Repository](https://mosaic-europe.eu/mosaic/mosaic-knowledge-repository) while this library is being populated.")
         return
-    if search_query:
-        st.caption(f"Showing {len(tool_items)} of {len(TOOL_DEFINITIONS)} tools for ‘{search_query}’.")
-    else:
-        st.caption(f"{len(tool_items)} tools · alphabetical by title")
-    if not tool_items:
-        st.info("No tools match your search. Try a broader term or clear the search field.")
+
+    selected_id = _query_param_text("resource")
+    search_col, origin_col, type_col, module_col = st.columns([2.2, 1, 1, 1.2])
+    with search_col:
+        query = st.text_input("Search resources", placeholder="Search title, author, keyword or description…", key="resource-library-search").strip()
+    origins = ["All origins"] + sorted({item.get("origin", "MOSAIC content") for item in resources.values()})
+    with origin_col:
+        origin_filter = st.selectbox("Origin", origins, key="resource-library-origin")
+    types = ["All types"] + sorted({item.get("resource_type", "Resource") for item in resources.values()})
+    with type_col:
+        type_filter = st.selectbox("Type", types, key="resource-library-type")
+    module_options = ["All modules"] + [module["short_title"] for module in MODULES.values()]
+    with module_col:
+        module_filter = st.selectbox("Used in", module_options, key="resource-library-module")
+
+    module_label_to_id = {module["short_title"]: module_id for module_id, module in MODULES.items()}
+    needle = query.casefold()
+    shown: list[tuple[str, dict]] = []
+    for resource_id, item in resources.items():
+        searchable = " ".join([
+            item.get("title", ""), item.get("description", ""), item.get("authors", ""), item.get("year", ""),
+            item.get("resource_type", ""), item.get("origin", ""), " ".join(item.get("tags") or []),
+        ]).casefold()
+        if needle and needle not in searchable:
+            continue
+        if origin_filter != "All origins" and item.get("origin") != origin_filter:
+            continue
+        if type_filter != "All types" and item.get("resource_type") != type_filter:
+            continue
+        if module_filter != "All modules" and module_label_to_id.get(module_filter) not in (item.get("related_modules") or []):
+            continue
+        shown.append((resource_id, item))
+    if selected_id in resources and all(resource_id != selected_id for resource_id, _item in shown):
+        shown.append((selected_id, resources[selected_id]))
+    shown.sort(key=lambda pair: (pair[0] != selected_id, int(pair[1].get("_sort_order") or 0), pair[1].get("title", "").casefold()))
+
+    st.caption(f"{len(shown)} of {len(resources)} resources")
+    if selected_id in resources:
+        st.info(f"Opened from a learning step: **{resources[selected_id]['title']}** is shown first, even if your current filters would normally hide it.")
+    if not shown:
+        st.info("No resources match these filters.")
         return
 
     cols = st.columns(2, gap="large")
-    for idx, (tool_id, tool) in enumerate(tool_items):
-        links = _tool_lesson_links(tool)
-        primary_module_id = links[0][0] if links else str(tool.get("module_id") or "")
-        module_label = _tool_module_label(tool)
-        card_class = "drivers" if primary_module_id == "drivers" else "policy-lab"
+    for idx, (resource_id, item) in enumerate(shown):
         with cols[idx % 2]:
+            origin_class = "mosaic" if item.get("origin") == "MOSAIC content" else "external"
+            module_names = [MODULES[mid]["short_title"] for mid in item.get("related_modules") or [] if mid in MODULES]
+            tags = item.get("tags") or []
+            meta_bits = [item.get("resource_type", "Resource")]
+            if item.get("year"):
+                meta_bits.append(item["year"])
+            if item.get("authors"):
+                meta_bits.append(item["authors"])
+            tag_html = "".join(f"<span class='m-tool-filter-tag'>{escape(tag)}</span>" for tag in tags[:5])
+            module_html = "".join(f"<span class='m-tool-filter-tag'>{escape(name)}</span>" for name in module_names)
+            url_html = ""
+            if item.get("source_url"):
+                url_html = f"<a href='{escape(item['source_url'])}' target='_blank' rel='noopener noreferrer'>Open source ↗</a>"
             st.markdown(
                 f"""
-                <div class='m-tool-library-card {card_class}'>
-                    <div class='m-kicker'>{escape(str(module_label))}</div>
-                    <h3>{escape(tool['title'])}</h3>
-                    <p>{escape(tool['description'])}</p>
-                    <div class='m-tool-meta'><span>{escape(tool.get('format',''))}</span><span>{escape(tool.get('duration',''))}</span>{"<span>Under construction</span>" if _is_under_construction(tool) else ""}</div>
+                <div class='m-resource-library-card'>
+                    <div class='m-resource-badges'><span class='m-resource-badge {origin_class}'>{escape(item.get('origin') or '')}</span><span class='m-resource-badge'>{escape(' · '.join(meta_bits))}</span></div>
+                    <h3>{escape(item['title'])}</h3>
+                    <p>{escape(item.get('description') or '')}</p>
+                    <div class='m-tool-filter-tags'>{module_html}{tag_html}</div>
+                    {url_html}
                 </div>
                 """,
                 unsafe_allow_html=True,
             )
-            with st.expander("What is inside"):
-                tool_images = _resource_files_for("tool_image", tool_id)
-                if tool_images:
-                    image_record = _cached_resource_file(tool_images[0]["resource_id"])
-                    if image_record and image_record.get("file_data") and not image_record.get("archived"):
-                        st.image(
-                            image_record["file_data"],
-                            caption=str(image_record.get("description") or image_record.get("title") or ""),
-                            width="stretch",
-                        )
-                if tool.get("outcome"):
-                    st.markdown(f"**Output:** {tool['outcome']}")
-                for step_index, step in enumerate(tool.get("steps") or [], start=1):
-                    st.markdown(f"{step_index}. {step}")
+            files = [meta for meta in _resource_files_for("library", resource_id) if not meta.get("archived")]
+            for fidx, meta in enumerate(files):
+                _render_resource_download(meta, key=f"library-resource-{resource_id}-{fidx}", button_type="secondary")
 
-                resource_names = [
-                    str(meta.get("title") or meta.get("file_name") or "Resource")
-                    for meta in _resource_files_for("tool", tool_id)
-                    if not meta.get("archived")
-                ]
-                for file_name in TOOL_DOWNLOAD_FILES.get(tool_id, []):
-                    file_path, _file_type, error = configured_tool_file(file_name)
-                    if file_path and not error:
-                        resource_names.append(file_name)
-                if resource_names:
-                    st.markdown("**Resources included:**")
-                    for resource_name in resource_names:
-                        st.markdown(f"- {escape(resource_name)}")
 
+def _tool_matches_filters(tool: dict, *, query: str, module_filter: str, format_filter: str, keyword_filter: str) -> bool:
+    links = _tool_lesson_links(tool)
+    searchable = " ".join([
+        str(tool.get("title") or ""), str(tool.get("description") or ""),
+        str(tool.get("format") or ""), str(tool.get("duration") or ""), str(tool.get("website_url") or ""),
+        " ".join(tool.get("keywords") or []), _tool_module_label(tool),
+        " ".join(f"{mid} {tid}" for mid, tid in links),
+    ]).casefold()
+    if query and query.casefold() not in searchable:
+        return False
+    if module_filter != "All modules":
+        module_id = next((mid for mid, module in MODULES.items() if module["short_title"] == module_filter), "")
+        if module_id and module_id not in {mid for mid, _tid in links} and str(tool.get("module_id") or "") != module_id:
+            return False
+    if format_filter != "All formats" and str(tool.get("format") or "") != format_filter:
+        return False
+    if keyword_filter != "All keywords" and keyword_filter not in (tool.get("keywords") or []):
+        return False
+    return True
+
+
+
+def _tool_format_class(format_label: str | None) -> str:
+    return {
+        "Workshop": "workshop",
+        "Website": "website",
+        "Model": "model",
+        "Digital tool": "digital-tool",
+    }.get(str(format_label or "Workshop"), "workshop")
+
+
+def _safe_embed_url(value: str | None) -> str:
+    url = str(value or "").strip()
+    if not url:
+        return ""
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return ""
+    return url if parsed.scheme in {"http", "https"} and parsed.netloc else ""
+
+
+def _tool_card_media_html(tool_id: str, tool: dict) -> str:
+    rows = _resource_files_for("tool_image", tool_id)
+    if rows:
+        uri = _resource_image_data_uri(rows[0].get("resource_id"))
+        if uri:
+            alt = escape(str(rows[0].get("description") or tool.get("title") or "Tool image"))
+            return f"<div class='m-tool-card-media'><img src='{uri}' alt='{alt}'></div>"
+    format_label = str(tool.get("format") or "Workshop")
+    icon = TOOL_FORMAT_ICONS.get(format_label, "◫")
+    return f"<div class='m-tool-card-media m-tool-card-placeholder'><span aria-hidden='true'>{escape(icon)}</span></div>"
+
+
+def _render_tool_gallery(tool_id: str) -> None:
+    rows = [row for row in _resource_files_for("tool_gallery", tool_id) if not row.get("archived")]
+    slides = []
+    for row in rows:
+        uri = _resource_image_data_uri(row.get("resource_id"))
+        if uri:
+            slides.append({
+                "src": uri,
+                "caption": str(row.get("description") or row.get("title") or ""),
+            })
+    if not slides:
+        return
+    slides_json = json.dumps(slides).replace("</", "<\\/")
+    component = f"""
+    <div id="mosaic-slider" class="slider-shell">
+      <div class="slider-stage"><img id="slider-img" alt="Tool example preview"><div id="slider-caption" class="slider-caption"></div></div>
+      <button class="slider-btn prev" type="button" aria-label="Previous image">&#8592;</button>
+      <button class="slider-btn next" type="button" aria-label="Next image">&#8594;</button>
+      <div id="slider-count" class="slider-count"></div>
+    </div>
+    <style>
+      *{{box-sizing:border-box}} body{{margin:0;font-family:Poppins,'Segoe UI',Arial,sans-serif;background:transparent;color:#3c3c3b}}
+      .slider-shell{{position:relative;border:1px solid #deded9;border-radius:18px;overflow:hidden;background:#f6f6f4}}
+      .slider-stage{{height:470px;display:flex;align-items:center;justify-content:center;position:relative;background:#f6f6f4}}
+      .slider-stage img{{width:100%;height:100%;object-fit:contain;display:block}}
+      .slider-caption{{position:absolute;left:16px;right:16px;bottom:14px;padding:9px 12px;border-radius:11px;background:rgba(255,255,255,.92);font-size:13px;line-height:1.4;box-shadow:0 3px 14px rgba(0,0,0,.08)}}
+      .slider-caption:empty{{display:none}}
+      .slider-btn{{position:absolute;top:50%;transform:translateY(-50%);width:42px;height:42px;border-radius:999px;border:1px solid #deded9;background:rgba(255,255,255,.95);color:#9c2438;font-size:20px;cursor:pointer}}
+      .slider-btn:hover{{background:#f8eef0}} .prev{{left:12px}} .next{{right:12px}}
+      .slider-count{{position:absolute;right:14px;top:14px;padding:5px 9px;border-radius:999px;background:rgba(255,255,255,.92);font-size:12px;font-weight:600}}
+    </style>
+    <script>
+      const slides={slides_json}; let i=0;
+      const img=document.getElementById('slider-img'), cap=document.getElementById('slider-caption'), count=document.getElementById('slider-count');
+      function show(){{ const s=slides[i]; img.src=s.src; cap.textContent=s.caption||''; count.textContent=(i+1)+' / '+slides.length; }}
+      document.querySelector('.prev').onclick=()=>{{i=(i-1+slides.length)%slides.length;show();}};
+      document.querySelector('.next').onclick=()=>{{i=(i+1)%slides.length;show();}};
+      show();
+    </script>
+    """
+    components.html(component, height=500, scrolling=False)
+
+
+def _render_tool_preview(tool_id: str, tool: dict) -> None:
+    preview_url = _safe_embed_url(tool.get("preview_url"))
+    gallery_rows = [row for row in _resource_files_for("tool_gallery", tool_id) if not row.get("archived")]
+    if not preview_url and not gallery_rows:
+        return
+    st.markdown("<div class='m-section-title'><h2>Preview</h2><p>Explore the tool, model output or example screens before opening the external site or downloading resources.</p></div>", unsafe_allow_html=True)
+    if preview_url:
+        src = escape(preview_url, quote=True)
+        components.html(
+            f"""<style>body{{margin:0;background:#fff}}iframe{{width:100%;height:540px;border:1px solid #deded9;border-radius:18px;background:#fff}}</style><iframe src=\"{src}\" loading=\"lazy\" sandbox=\"allow-scripts allow-same-origin allow-forms allow-popups allow-downloads\" referrerpolicy=\"no-referrer-when-downgrade\"></iframe>""",
+            height=555,
+            scrolling=False,
+        )
+        st.caption("If the embedded preview is blocked by the source website, use the external website link instead.")
+    if gallery_rows:
+        _render_tool_gallery(tool_id)
+
+def _render_tool_detail(tool_id: str, tool: dict) -> None:
+    source_module_id = str(st.session_state.get("module_id") or "")
+    source_topic_id = str(st.session_state.get("topic_id") or "")
+    came_from_lesson = bool(source_module_id in MODULES and source_topic_id and topic_by_id(source_module_id, source_topic_id))
+    if st.button("← All tools", key=f"tool-detail-back-{tool_id}"):
+        navigate("tools", "", "", "")
+
+    format_label = str(tool.get("format") or "Workshop")
+    format_class = _tool_format_class(format_label)
+    format_icon = TOOL_FORMAT_ICONS.get(format_label, "◫")
+    hero_left, hero_right = st.columns([1.45, 1], gap="large", vertical_alignment="center")
+    with hero_left:
+        st.markdown(
+            f"""
+            <div class='m-tool-detail {format_class}'>
+                <div class='m-tool-format-line'><span class='m-tool-format-icon' aria-hidden='true'>{escape(format_icon)}</span><span>{escape(format_label)}</span></div>
+                <div class='m-kicker'>{escape(_tool_module_label(tool))}</div>
+                <h1>{escape(tool.get('title') or tool_id)}</h1>
+                <div class='m-tool-detail-meta'>{f"<span>{escape(tool.get('duration'))}</span>" if tool.get('duration') else ""}{"<span>Under construction</span>" if _is_under_construction(tool) else ""}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    with hero_right:
+        images = _resource_files_for("tool_image", tool_id)
+        if images:
+            record = _cached_resource_file(images[0]["resource_id"])
+            if record and record.get("file_data") and not record.get("archived"):
+                st.image(record["file_data"], caption=str(record.get("description") or ""), width="stretch")
+        else:
+            st.markdown(f"<div class='m-tool-detail-placeholder {format_class}'><span>{escape(format_icon)}</span><strong>{escape(format_label)}</strong></div>", unsafe_allow_html=True)
+
+    if _is_under_construction(tool):
+        st.warning("This tool is under construction and is not yet available.")
+        st.link_button("Subscribe to the MOSAIC newsletter for updates →", MOSAIC_NEWSLETTER_URL, type="primary")
+        return
+    if came_from_lesson:
+        source_module = MODULES[source_module_id]
+        st.info(f"You opened this tool from **{source_module['short_title']}**.")
+        if st.button("← Return to the learning step", key=f"tool-detail-return-{tool_id}"):
+            navigate("topic", source_module_id, source_topic_id)
+
+    if tool.get("description"):
+        st.markdown("### Description")
+        st.write(tool["description"])
+
+    if tool.get("steps"):
+        st.markdown("### How to use it")
+        for idx, step in enumerate(tool.get("steps") or [], start=1):
+            st.markdown(f"**{idx}.** {escape(step)}")
+
+    links = _tool_lesson_links(tool)
+    if links:
+        st.markdown("### Used in the learning modules")
+        link_cols = st.columns(min(2, len(links)))
+        for idx, (module_id, lesson_id) in enumerate(links):
+            module = MODULES.get(module_id)
+            lesson = topic_by_id(module_id, lesson_id) if module else None
+            if module and lesson:
+                with link_cols[idx % len(link_cols)]:
+                    if st.button(f"{module['short_title']} · {lesson['title']} →", key=f"tool-learning-link-{tool_id}-{module_id}-{lesson_id}", width="stretch"):
+                        navigate("topic", module_id, lesson_id)
+
+    _render_tool_preview(tool_id, tool)
+
+    managed_files = [meta for meta in _resource_files_for("tool", tool_id) if not meta.get("archived")]
+    shipped_files = []
+    for file_name in TOOL_DOWNLOAD_FILES.get(tool_id, []):
+        file_path, file_type, error = configured_tool_file(file_name)
+        if file_path and not error:
+            shipped_files.append((file_name, file_path, file_type))
+    if managed_files or shipped_files:
+        st.markdown("<div class='m-section-title'><h2>Resources</h2><p>Download the editable files and supporting material attached to this item.</p></div>", unsafe_allow_html=True)
+        for idx, meta in enumerate(managed_files):
+            _render_resource_download(meta, key=f"tool-detail-managed-{tool_id}-{idx}", button_type="secondary", label=f"Download {meta.get('title') or meta.get('file_name')} ↓")
+        for idx, (file_name, file_path, file_type) in enumerate(shipped_files):
+            st.download_button(f"Download {file_name} ↓", data=file_path.read_bytes(), file_name=file_name, mime=file_type[1], key=f"tool-detail-shipped-{tool_id}-{idx}", width="stretch")
+        if len(managed_files) + len(shipped_files) > 1:
+            data, name, mime_type, count = _tool_download_payload(tool_id, tool)
+            st.download_button(f"Download all {count} resources (.zip) ↓", data=data, file_name=name, mime=mime_type, key=f"tool-detail-all-{tool_id}", type="primary", width="stretch")
+
+    if tool.get("website_url"):
+        st.link_button("Open website / tool ↗", tool["website_url"], type="primary", width="content")
+
+
+def page_tools(user):
+    selected_tool_id = st.session_state.get("tool_id")
+    selected_tool = TOOL_DEFINITIONS.get(selected_tool_id)
+    if selected_tool:
+        _render_tool_detail(selected_tool_id, selected_tool)
+        return
+
+    st.markdown(
+        """
+        <div class='m-tools-repo-hero'>
+            <div class='m-kicker'>MOSAIC Learn</div>
+            <h1>Tools</h1>
+            <p>Find practical methods, worksheets and external tools for land-use decision making. Search the repository, filter it, then open a tool to see its purpose, linked learning steps and downloadable resources.</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.markdown("Not sure which tool fits? Start in [Learning](?page=modules), where lessons point to relevant tools in context.")
+    search_col, module_col, format_col, keyword_col = st.columns([2.1, 1.15, 1.05, 1.05])
+    with search_col:
+        query = st.text_input("Search tools", placeholder="Search by name, description or keyword…", key="tools-search-query").strip()
+    module_options = ["All modules"] + [module["short_title"] for module in MODULES.values()]
+    with module_col:
+        module_filter = st.selectbox("Module", module_options, key="tools-module-filter")
+    format_options = ["All formats"] + sorted({str(tool.get("format") or "Tool") for tool in TOOL_DEFINITIONS.values()})
+    with format_col:
+        format_filter = st.selectbox("Format", format_options, key="tools-format-filter")
+    keyword_options = ["All keywords"] + sorted({word for tool in TOOL_DEFINITIONS.values() for word in (tool.get("keywords") or [])})
+    with keyword_col:
+        keyword_filter = st.selectbox("Keyword", keyword_options, key="tools-keyword-filter")
+
+    tool_items = [
+        (tool_id, tool) for tool_id, tool in TOOL_DEFINITIONS.items()
+        if _tool_matches_filters(tool, query=query, module_filter=module_filter, format_filter=format_filter, keyword_filter=keyword_filter)
+    ]
+    tool_items.sort(key=lambda item: str(item[1].get("title") or item[0]).casefold())
+    st.caption(f"{len(tool_items)} of {len(TOOL_DEFINITIONS)} tools")
+    if not tool_items:
+        st.info("No tools match these filters.")
+        return
+    cols = st.columns(3, gap="medium")
+    for idx, (tool_id, tool) in enumerate(tool_items):
+        with cols[idx % 3]:
+            keywords = tool.get("keywords") or []
+            keyword_html = "".join(f"<span class='m-tool-filter-tag'>{escape(word)}</span>" for word in keywords[:4])
+            format_label = str(tool.get("format") or "Workshop")
+            format_class = _tool_format_class(format_label)
+            format_icon = TOOL_FORMAT_ICONS.get(format_label, "◫")
+            media_html = _tool_card_media_html(tool_id, tool)
+            duration_tag = f"<span class='m-tool-filter-tag'>{escape(tool.get('duration'))}</span>" if tool.get("duration") else ""
+            st.markdown(
+                f"""
+                <div class='m-tool-repo-card {format_class}'>
+                    {media_html}
+                    <div class='m-tool-card-body'>
+                        <div class='m-tool-format-line'><span class='m-tool-format-icon' aria-hidden='true'>{escape(format_icon)}</span><span>{escape(format_label)}</span></div>
+                        <div class='m-kicker'>{escape(_tool_module_label(tool))}</div>
+                        <h3>{escape(tool.get('title') or tool_id)}</h3>
+                        <p>{escape(tool.get('description') or '')}</p>
+                        <div class='m-tool-filter-tags'>{duration_tag}{keyword_html}</div>
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
             if _is_under_construction(tool):
-                st.link_button(
-                    f"{tool.get('title', 'Tool')} · under construction · subscribe →",
-                    MOSAIC_NEWSLETTER_URL,
-                    type="secondary",
-                    width="stretch",
-                )
-            else:
-                resource_data, resource_name, resource_mime, resource_count = _tool_download_payload(tool_id, tool)
-                st.download_button(
-                    "Download resources ↓",
-                    data=resource_data,
-                    file_name=resource_name,
-                    mime=resource_mime,
-                    key=f"download-tool-resources-{tool_id}",
-                    type="primary" if tool_id == selected_tool_id else "secondary",
-                    width="stretch",
-                )
-                st.caption(f"{resource_count} resource{'s' if resource_count != 1 else ''} included")
+                st.link_button("Under construction · subscribe →", MOSAIC_NEWSLETTER_URL, width="stretch")
+            elif st.button("Open tool →", key=f"tool-open-{tool_id}", type="primary", width="stretch"):
+                navigate("tools", "", "", tool_id)
 
 
 def page_learning(user):
-    st.markdown("<div class='m-kicker'>Your dashboard</div>", unsafe_allow_html=True)
-    st.title("My learning")
-    st.caption("Your active modules, progress, learning record and shareable results in one place.")
-
-    section = st.segmented_control(
-        "My learning section",
-        ["Learning overview", "Results & sharing"],
-        default="Learning overview",
-        key="learning-section",
-        label_visibility="collapsed",
-    )
-    if section == "Results & sharing":
-        page_results(user, embedded=True)
-        return
-
-    available = [(mid, m) for mid, m in MODULES.items() if m["status"] == "Available"]
-    if not available:
-        st.info("No modules are available yet.")
-        return
-
-    for module_id, module in available:
-        ratio, done, total = module_completion(user["user_id"], module_id)
-        next_topic_id = first_incomplete_topic(user["user_id"], module_id)
-        next_topic = topic_by_id(module_id, next_topic_id) if next_topic_id else None
-        with st.container(border=True):
-            a, b = st.columns([3.4, 1], vertical_alignment="center")
-            with a:
-                st.markdown(f"<div class='m-kicker'>{module['track']} · {module['estimated_minutes']} min</div>", unsafe_allow_html=True)
-                st.subheader(module["title"])
-                st.progress(ratio, text=f"{round(ratio * 100)}% complete · {done}/{total} learning steps")
-                if next_topic:
-                    st.caption(f"Next: {next_topic['level']} · {next_topic['title']} · {next_topic['minutes']} min")
-            with b:
-                if next_topic and st.button("Continue →", key=f"continue-{module_id}", type="primary", width="stretch"):
-                    navigate("topic", module_id, next_topic_id)
-                if st.button("Module overview", key=f"overview-{module_id}", width="stretch"):
-                    navigate("module", module_id)
+    """Backwards-compatible entry point: My learning now lives inside Learning."""
+    st.session_state["learning-hub-section"] = "My learning"
+    page_catalogue(user)
 
 
 def render_module_path(user, module_id: str):
@@ -3466,7 +3794,7 @@ def page_topic(user):
             placeholder="Capture a short observation, example or question you want to remember.",
             height=130,
         )
-        st.caption("Saved reflections are collected in your Profile under My reflection notebook.")
+        st.caption("Saved reflections are collected in Learning → Reflection notebook.")
 
     # Keep the quick check at the bottom of the learning content, after the
     # reflection question, so learners first connect the idea to their context.
@@ -3482,7 +3810,7 @@ def page_topic(user):
                     topic["id"],
                     reflection=reflection,
                 )
-                st.success("Reflection saved to your profile")
+                st.success("Reflection saved to your learning notebook")
         with action2:
             if not saved.get("completed"):
                 complete_label = "Complete & continue →" if next_topic else "Complete learning path ✓"
@@ -3505,13 +3833,25 @@ def page_topic(user):
                     st.rerun()
 
     sources = [str(item).strip() for item in (topic.get("sources") or []) if str(item).strip()]
-    if sources:
+    resource_ids = [str(item).strip() for item in (topic.get("resource_ids") or []) if str(item).strip()]
+    library_map = _published_library_resources() if resource_ids else {}
+    linked_resources = [library_map[rid] for rid in resource_ids if rid in library_map]
+    if linked_resources or sources:
         st.markdown(
-            "<div class='m-section-title'><h2>Sources & evidence</h2><p>References supporting this lesson.</p></div>",
+            "<div class='m-section-title'><h2>Sources & evidence</h2><p>Open the underlying MOSAIC or external sources used for this lesson.</p></div>",
             unsafe_allow_html=True,
         )
-        for source in sources:
-            st.markdown(f"- {escape(source)}")
+        for item in linked_resources:
+            resource_id = item["id"]
+            origin = escape(item.get("origin") or "Resource")
+            st.markdown(
+                f"<div class='m-linked-resource'><a href='?page=resources&resource={quote(resource_id)}'>{escape(item['title'])} →</a><br><span class='m-small m-muted'>{origin} · {escape(item.get('resource_type') or 'Resource')}</span></div>",
+                unsafe_allow_html=True,
+            )
+        if sources:
+            with st.expander("Additional references"):
+                for source in sources:
+                    st.markdown(f"- {escape(source)}")
 
     with st.container(key="lesson_footer"):
         prev_col, mid_col, next_col = st.columns([1, 1, 1], gap="medium")
@@ -3701,13 +4041,14 @@ def page_results(user, *, embedded: bool = False):
         quiz_text = f"{quiz_correct}/{quiz_count}" if quiz_count else "—"
         st.markdown(f"<div class='m-stat'><div class='value'>{quiz_text}</div><div class='label'>Quick checks correct</div></div>", unsafe_allow_html=True)
 
-    st.markdown("<div class='m-section-title'><h2>Learning record</h2><p>Your results stay here; your private reflections are gathered in your profile notebook.</p></div>", unsafe_allow_html=True)
+    st.markdown("<div class='m-section-title'><h2>Learning record</h2><p>Your results stay here; your private reflections are gathered in the Reflection notebook on this Learning page.</p></div>", unsafe_allow_html=True)
     for topic in learning_topics(module):
         p = progress.get(topic["id"], {})
         status = "✓ Completed" if p.get("completed") else "Not completed"
         st.markdown(f"**{topic['level']} · {topic['title']}**  \n{status}")
-    if st.button("Open my reflection notebook →", key=f"results-profile-{module_id}"):
-        navigate("profile")
+    if st.button("Open reflection notebook →", key=f"results-profile-{module_id}"):
+        st.session_state["learning-hub-section"] = "Reflection notebook"
+        st.rerun()
 
     st.markdown("<div class='m-section-title'><h2>Share your result</h2><p>Create a public summary without exposing private reflections.</p></div>", unsafe_allow_html=True)
     snapshot = {
@@ -4501,39 +4842,13 @@ def page_profile(user):
         if st.button("Read privacy notice →", width="stretch"):
             navigate("privacy")
 
-    st.markdown("<div class='m-section-title'><h2>My reflection notebook</h2><p>Everything you save while learning is gathered here, across all modules.</p></div>", unsafe_allow_html=True)
-    reflections = []
-    for module_id, module in MODULES.items():
-        if module.get("status") != "Available":
-            continue
-        module_progress = _cached_progress(user["user_id"], module_id)
-        for topic in learning_topics(module):
-            saved = module_progress.get(topic["id"], {})
-            text = (saved.get("reflection") or "").strip()
-            if text:
-                reflections.append({
-                    "module_id": module_id,
-                    "module": module,
-                    "topic": topic,
-                    "text": text,
-                    "updated_at": saved.get("updated_at") or "",
-                })
-    reflections.sort(key=lambda item: item["updated_at"], reverse=True)
-
-    if not reflections:
-        st.info("You have not saved any reflections yet. Add one from a learning step and it will appear here.")
-    else:
-        module_choices = ["All modules"] + list(dict.fromkeys(item["module"]["short_title"] for item in reflections))
-        selected_module = st.selectbox("Show reflections from", module_choices, key="profile-reflection-filter")
-        shown = [item for item in reflections if selected_module == "All modules" or item["module"]["short_title"] == selected_module]
-        for idx, item in enumerate(shown):
-            date_text = str(item["updated_at"])[:10]
-            st.markdown(
-                f"<div class='m-post'><div class='m-post-meta'><strong>{escape(item['module']['short_title'])}</strong> · {escape(item['topic']['level'])} · {escape(date_text)}</div><p><strong>{escape(item['topic']['title'])}</strong></p><p>{escape(item['text'])}</p></div>",
-                unsafe_allow_html=True,
-            )
-            if st.button("Open learning step →", key=f"profile-reflection-open-{item['module_id']}-{item['topic']['id']}-{idx}"):
-                navigate("topic", item["module_id"], item["topic"]["id"])
+    st.markdown(
+        "<div class='m-section-title'><h2>Learning & reflections</h2><p>Your progress, results and reflection notebook now live together on the Learning page.</p></div>",
+        unsafe_allow_html=True,
+    )
+    if st.button("Open Learning →", key="profile-open-learning", type="primary"):
+        st.session_state["learning-hub-section"] = "My learning"
+        navigate("catalogue")
 
     st.markdown(
         "<div class='m-section-title'><h2>Delete my account</h2><p>Permanently remove this profile and its linked MOSAIC Learn data.</p></div>",
@@ -4876,6 +5191,8 @@ def _render_content_studio_lessons(user: dict, snapshot: dict[str, dict]) -> Non
         if lesson.get("level") != "Convince"
     ]
     lesson_ids = [lesson["id"] for lesson in lessons]
+    library_snapshot = _admin_library_resource_snapshot()
+    library_options = [rid for rid, item in library_snapshot.items() if not item.get("_cms_archived")]
 
     if lesson_ids:
         lesson_id = st.selectbox(
@@ -4918,11 +5235,19 @@ def _render_content_studio_lessons(user: dict, snapshot: dict[str, dict]) -> Non
             summary = st.text_area("Summary", value=lesson.get("summary", ""), height=90, key=f"studio-lesson-summary-{module_id}-{lesson_id}")
             body = st.text_area("Intro / body text", value=lesson.get("body", ""), height=150, key=f"studio-lesson-body-{module_id}-{lesson_id}")
             prompt = st.text_area("Reflection prompt", value=lesson.get("prompt", ""), height=90, key=f"studio-lesson-prompt-{module_id}-{lesson_id}")
+            linked_resource_ids = st.multiselect(
+                "Linked Resources page items",
+                library_options,
+                default=[rid for rid in lesson.get("resource_ids") or [] if rid in library_options],
+                format_func=lambda rid: f"{library_snapshot[rid]['title']} · {library_snapshot[rid]['origin']}",
+                help="These appear as clickable sources in the lesson and open the searchable Resources page.",
+                key=f"studio-lesson-resource-links-{module_id}-{lesson_id}",
+            )
             sources_text = st.text_area(
-                "Sources · one reference per line",
+                "Additional / legacy references · one per line",
                 value="\n".join(lesson.get("sources") or []),
-                height=130,
-                help="Add scientific papers, reports, datasets or other references supporting this lesson.",
+                height=110,
+                help="Use this for references that have not yet been added to the Resources page.",
                 key=f"studio-lesson-sources-{module_id}-{lesson_id}",
             )
             payload = _lesson_content_payload(lesson)
@@ -4935,6 +5260,7 @@ def _render_content_studio_lessons(user: dict, snapshot: dict[str, dict]) -> Non
                     "summary": summary.strip(),
                     "body": body.strip(),
                     "prompt": prompt.strip(),
+                    "resource_ids": linked_resource_ids,
                     "sources": [line.strip() for line in sources_text.splitlines() if line.strip()],
                 }
             )
@@ -5002,9 +5328,15 @@ def _render_content_studio_lessons(user: dict, snapshot: dict[str, dict]) -> Non
                 new_level = st.selectbox("Level", ["Understand", "Apply"], key=f"new-lesson-level-{module_id}")
                 new_minutes = st.number_input("Minutes", min_value=0, max_value=1000, value=10, key=f"new-lesson-minutes-{module_id}")
                 new_summary = st.text_area("Summary", height=80, key=f"new-lesson-summary-{module_id}")
+                new_resource_ids = st.multiselect(
+                    "Linked Resources page items",
+                    library_options,
+                    format_func=lambda rid: f"{library_snapshot[rid]['title']} · {library_snapshot[rid]['origin']}",
+                    key=f"new-lesson-resource-links-{module_id}",
+                )
                 new_sources = st.text_area(
-                    "Sources · one reference per line",
-                    height=110,
+                    "Additional / legacy references · one per line",
+                    height=100,
                     key=f"new-lesson-sources-{module_id}",
                 )
                 new_sort = st.number_input(
@@ -5032,6 +5364,7 @@ def _render_content_studio_lessons(user: dict, snapshot: dict[str, dict]) -> Non
                         "summary": new_summary.strip(),
                         "body": "",
                         "prompt": "",
+                        "resource_ids": new_resource_ids,
                         "sources": [line.strip() for line in new_sources.splitlines() if line.strip()],
                         "theory_cards": [
                             {
@@ -5750,7 +6083,7 @@ def _render_content_studio_convince_files(user: dict, snapshot: dict[str, dict])
 
 def _render_content_studio_tool_image_manager(user: dict, tool_id: str, tool: dict) -> None:
     st.markdown("#### Tool image")
-    st.caption("Optional. The image is only shown inside the learner-facing ‘What is inside’ expander.")
+    st.caption("Optional. This is the main image shown on the tool card and tool detail page.")
     image_rows = _resource_files_for("tool_image", tool_id, include_archived=True)
     active = next((row for row in image_rows if not row.get("archived")), None)
     if active:
@@ -5812,13 +6145,174 @@ def _render_content_studio_tool_image_manager(user: dict, tool_id: str, tool: di
         st.rerun()
 
 
+
+def _render_content_studio_tool_gallery_manager(user: dict, tool_id: str, tool: dict) -> None:
+    st.markdown("#### Preview image slider")
+    st.caption("Optional. Upload screenshots, model outputs or example images. Learners see them as a slider on the tool page.")
+    rows = _resource_files_for("tool_gallery", tool_id, include_archived=True)
+    for meta in rows:
+        status = "archived" if meta.get("archived") else "shown"
+        with st.expander(f"{meta.get('title') or meta.get('file_name')} · {status}"):
+            record = _cached_resource_file(meta["resource_id"])
+            if record and record.get("file_data"):
+                st.image(record["file_data"], caption=str(meta.get("description") or ""), width=360)
+            with st.form(f"studio-tool-gallery-edit-{meta['resource_id']}"):
+                caption = st.text_input("Caption", value=str(meta.get("description") or ""), key=f"studio-gallery-caption-{meta['resource_id']}")
+                sort_order = st.number_input("Order", min_value=0, max_value=10000, value=int(meta.get("sort_order") or 0), step=10, key=f"studio-gallery-order-{meta['resource_id']}")
+                save_meta = st.form_submit_button("Save image details", type="primary")
+            if save_meta:
+                save_cms_resource_file(
+                    meta["resource_id"], scope_type="tool_gallery", scope_id=tool_id,
+                    module_id=str(tool.get("module_id") or ""), resource_kind="Preview image",
+                    title=str(meta.get("title") or meta.get("file_name") or "Preview image"), description=caption.strip(),
+                    sort_order=int(sort_order), updated_by=user["user_id"],
+                )
+                _clear_content_studio_caches(); _content_studio_flash("Preview image details saved."); st.rerun()
+            if meta.get("archived"):
+                if st.button("Restore image", key=f"studio-gallery-restore-{meta['resource_id']}"):
+                    set_cms_resource_archived(meta["resource_id"], False, user["user_id"]); _clear_content_studio_caches(); st.rerun()
+            else:
+                if st.button("Remove image", key=f"studio-gallery-remove-{meta['resource_id']}"):
+                    set_cms_resource_archived(meta["resource_id"], True, user["user_id"]); _clear_content_studio_caches(); st.rerun()
+
+    uploads = st.file_uploader(
+        "Add preview images",
+        type=["png", "jpg", "jpeg", "webp"],
+        accept_multiple_files=True,
+        key=f"studio-tool-gallery-upload-{tool_id}",
+    )
+    if st.button("Upload preview images", key=f"studio-tool-gallery-save-{tool_id}", type="primary", disabled=not bool(uploads)):
+        prepared = []
+        for offset, upload in enumerate(uploads or []):
+            file_name, mime_type, file_bytes = _validate_uploaded_image(upload)
+            if file_bytes is None:
+                prepared = []
+                break
+            prepared.append((file_name, mime_type, file_bytes, (len(rows) + offset + 1) * 10))
+        for file_name, mime_type, file_bytes, order in prepared:
+            save_cms_resource_file(
+                uuid4().hex, scope_type="tool_gallery", scope_id=tool_id,
+                module_id=str(tool.get("module_id") or ""), resource_kind="Preview image",
+                title=Path(file_name).stem.replace("-", " ").replace("_", " ").strip().title() or "Preview image",
+                description="", file_name=file_name, mime_type=mime_type, file_data=file_bytes,
+                sort_order=order, updated_by=user["user_id"],
+            )
+        if prepared:
+            _clear_content_studio_caches(); _content_studio_flash(f"{len(prepared)} preview image{'s' if len(prepared) != 1 else ''} uploaded."); st.rerun()
+
+def _render_content_studio_library_resources(user: dict, snapshot: dict[str, dict]) -> None:
+    if not is_administrator(user):
+        st.info("Only administrators can manage the Resources library.")
+        return
+    st.markdown("### Resources")
+    st.caption("Publish searchable source records for papers, reports, websites and PDFs. Mark each item as MOSAIC content or external content, then link it to lessons from Modules & lessons.")
+    resources = _admin_library_resource_snapshot()
+    resource_ids = list(resources)
+    module_ids = [mid for mid, module in snapshot.items() if not module.get("_cms_archived")]
+    if resource_ids:
+        resource_id = st.selectbox(
+            "Resource to edit",
+            resource_ids,
+            format_func=lambda rid: f"{resources[rid]['title']} · {resources[rid]['origin']}" + (" · archived" if resources[rid].get("_cms_archived") else ""),
+            key="studio-library-resource-select",
+        )
+        item = resources[resource_id]
+        archived = bool(item.get("_cms_archived"))
+        with st.form(f"studio-library-resource-form-{resource_id}"):
+            title = st.text_input("Title", value=item.get("title", ""), key=f"studio-library-title-{resource_id}")
+            a, b, c = st.columns([1, 1, 1])
+            with a:
+                origin = st.selectbox("Origin", ["MOSAIC content", "External content"], index=["MOSAIC content", "External content"].index(item.get("origin", "MOSAIC content")), key=f"studio-library-origin-{resource_id}")
+            with b:
+                resource_type = st.text_input("Type", value=item.get("resource_type", "Report"), key=f"studio-library-type-{resource_id}")
+            with c:
+                year = st.text_input("Year", value=item.get("year", ""), key=f"studio-library-year-{resource_id}")
+            authors = st.text_input("Author(s) / organisation", value=item.get("authors", ""), key=f"studio-library-authors-{resource_id}")
+            source_url = st.text_input("Paper / source URL", value=item.get("source_url", ""), placeholder="https://…", key=f"studio-library-url-{resource_id}")
+            description = st.text_area("Description", value=item.get("description", ""), height=100, key=f"studio-library-description-{resource_id}")
+            tags_text = st.text_input("Keywords / tags", value=", ".join(item.get("tags") or []), key=f"studio-library-tags-{resource_id}")
+            related_modules = st.multiselect(
+                "Related learning modules",
+                module_ids,
+                default=[mid for mid in item.get("related_modules") or [] if mid in module_ids],
+                format_func=lambda mid: snapshot[mid]["short_title"],
+                key=f"studio-library-modules-{resource_id}",
+            )
+            sort_order = st.number_input("Sort order", min_value=0, max_value=10000, value=int(item.get("_cms_sort_order") or 0), step=10, key=f"studio-library-sort-{resource_id}")
+            payload = {
+                "id": resource_id, "title": title.strip(), "origin": origin, "resource_type": resource_type.strip() or "Resource",
+                "authors": authors.strip(), "year": year.strip(), "source_url": source_url.strip(), "description": description.strip(),
+                "tags": [part.strip() for part in tags_text.split(",") if part.strip()], "related_modules": related_modules,
+            }
+            save_col, publish_col = st.columns(2)
+            with save_col:
+                save_resource = st.form_submit_button("Save resource draft", width="stretch")
+            with publish_col:
+                publish_resource = st.form_submit_button("Publish resource", type="primary", width="stretch", disabled=archived)
+        if save_resource:
+            if not title.strip():
+                st.error("Add a resource title.")
+            else:
+                save_cms_library_resource_draft(resource_id, payload, int(sort_order), user["user_id"])
+                _clear_content_studio_caches()
+                _content_studio_flash("Resource draft saved.")
+                st.rerun()
+        if publish_resource:
+            if not title.strip():
+                st.error("Add a resource title.")
+            else:
+                publish_cms_library_resource(resource_id, payload, int(sort_order), user["user_id"])
+                _clear_content_studio_caches()
+                _content_studio_flash("Resource published to the searchable Resources page.")
+                st.rerun()
+        with st.expander("Archive / restore resource"):
+            if archived:
+                if st.button("Restore resource", key=f"studio-library-restore-{resource_id}", type="primary"):
+                    set_cms_library_resource_archived(resource_id, False, user["user_id"], sort_order=int(item.get("_cms_sort_order") or 0))
+                    _clear_content_studio_caches(); _content_studio_flash("Resource restored."); st.rerun()
+            else:
+                if st.button("Archive resource", key=f"studio-library-archive-{resource_id}"):
+                    set_cms_library_resource_archived(resource_id, True, user["user_id"], sort_order=int(item.get("_cms_sort_order") or 0))
+                    _clear_content_studio_caches(); _content_studio_flash("Resource archived."); st.rerun()
+        _render_content_studio_resource_manager(
+            user, scope_type="library", scope_id=resource_id, heading=f"PDF / attached files for {item['title']}", default_kind="PDF",
+        )
+    else:
+        st.info("No Resources-page items exist yet.")
+
+    with st.expander("＋ Add resource"):
+        with st.form("studio-add-library-resource"):
+            new_id = st.text_input("Resource ID", placeholder="drivers-d31", key="studio-new-library-id").strip().lower()
+            new_title = st.text_input("Title", key="studio-new-library-title")
+            a, b = st.columns(2)
+            with a:
+                new_origin = st.selectbox("Origin", ["MOSAIC content", "External content"], key="studio-new-library-origin")
+            with b:
+                new_type = st.text_input("Type", value="Report", key="studio-new-library-type")
+            add_resource = st.form_submit_button("Create resource draft", type="primary")
+        if add_resource:
+            if not _valid_content_id(new_id):
+                st.error("Use a lowercase resource ID with letters, numbers and hyphens.")
+            elif new_id in resources:
+                st.error("That resource ID already exists.")
+            elif not new_title.strip():
+                st.error("Add a resource title.")
+            else:
+                payload = {
+                    "id": new_id, "title": new_title.strip(), "origin": new_origin, "resource_type": new_type.strip() or "Resource",
+                    "authors": "", "year": "", "source_url": "", "description": "", "tags": [], "related_modules": [],
+                }
+                save_cms_library_resource_draft(new_id, payload, (len(resources) + 1) * 10, user["user_id"])
+                _clear_content_studio_caches(); _content_studio_flash("Resource draft created. Add its source link and optional PDF before publishing."); st.rerun()
+
+
 def _render_content_studio_tools(user: dict, snapshot: dict[str, dict]) -> None:
     if not is_administrator(user):
         st.info("Only administrators can manage tools and tool files.")
         return
     st.markdown("### Tools & files")
     st.caption(
-        "Edit House of Tools metadata, link each tool to one or more learning steps, attach several resource files, and optionally add an image shown only inside ‘What is inside’. Multiple tools can link to the same learning step."
+        "Edit tool metadata and format, optionally link it to learning steps, add a card/detail image, attach resources, embed an external preview, or upload example images for a slider."
     )
     tools = _admin_tools_snapshot()
     tool_ids = sorted(tools, key=lambda value: str(tools[value].get("title") or value).casefold())
@@ -5874,13 +6368,33 @@ def _render_content_studio_tools(user: dict, snapshot: dict[str, dict]) -> None:
             sort_order = int(tool.get("_cms_sort_order") or 0)
             d, e = st.columns(2)
             with d:
-                duration = st.text_input("Suggested time", value=tool.get("duration", ""), key=f"studio-tool-duration-{tool_id}")
+                duration = st.text_input("Suggested time (optional)", value=tool.get("duration", ""), key=f"studio-tool-duration-{tool_id}")
             with e:
-                format_label = st.text_input("Format", value=tool.get("format", ""), key=f"studio-tool-format-{tool_id}")
-            description = st.text_area("Description", value=tool.get("description", ""), height=100, key=f"studio-tool-description-{tool_id}")
-            outcome = st.text_area("Expected output", value=tool.get("outcome", ""), height=80, key=f"studio-tool-outcome-{tool_id}")
+                current_format = tool.get("format", "Workshop") if tool.get("format", "Workshop") in TOOL_FORMATS else "Workshop"
+                format_label = st.selectbox("Format", list(TOOL_FORMATS), index=list(TOOL_FORMATS).index(current_format), key=f"studio-tool-format-{tool_id}")
+            website_url = st.text_input(
+                "Website / external URL (optional)",
+                value=tool.get("website_url", ""),
+                placeholder="https://…",
+                help="Use this for the main website, online model or digital tool learners should open.",
+                key=f"studio-tool-website-{tool_id}",
+            )
+            preview_url = st.text_input(
+                "Embedded preview URL (optional)",
+                value=tool.get("preview_url", ""),
+                placeholder="https://…",
+                help="If the source allows iframe embedding, it will appear as a live preview on the tool page. Otherwise learners can still use the main website link.",
+                key=f"studio-tool-preview-{tool_id}",
+            )
+            keywords_text = st.text_input(
+                "Keywords",
+                value=", ".join(tool.get("keywords") or []),
+                help="Comma-separated terms used by the Tools search and filters.",
+                key=f"studio-tool-keywords-{tool_id}",
+            )
+            description = st.text_area("Description", value=tool.get("description", ""), height=150, help="Free text. Explain what this item is, what it shows, or why it is useful. It does not need to produce an output.", key=f"studio-tool-description-{tool_id}")
             steps = st.text_area(
-                "How to use it · one step per line",
+                "How to use it · one step per line (optional)",
                 value="\n".join(tool.get("steps") or []),
                 height=140,
                 key=f"studio-tool-steps-{tool_id}",
@@ -5906,7 +6420,9 @@ def _render_content_studio_tools(user: dict, snapshot: dict[str, dict]) -> None:
                     "duration": duration.strip(),
                     "format": format_label.strip(),
                     "description": description.strip(),
-                    "outcome": outcome.strip(),
+                    "website_url": website_url.strip(),
+                    "preview_url": preview_url.strip(),
+                    "keywords": [item.strip() for item in keywords_text.split(",") if item.strip()],
                     "steps": [line.strip() for line in steps.splitlines() if line.strip()],
                 }
             )
@@ -5950,6 +6466,7 @@ def _render_content_studio_tools(user: dict, snapshot: dict[str, dict]) -> None:
                     st.rerun()
 
         _render_content_studio_tool_image_manager(user, tool_id, tool)
+        _render_content_studio_tool_gallery_manager(user, tool_id, tool)
         links = _tool_lesson_links(tool)
         resource_module_id = links[0][0] if links else str(tool.get("module_id") or "")
         _render_content_studio_resource_manager(
@@ -5974,6 +6491,7 @@ def _render_content_studio_tools(user: dict, snapshot: dict[str, dict]) -> None:
                 help="Optional. You can publish an unlinked House of Tools item and link it later.",
                 key="studio-new-tool-links",
             )
+            new_tool_format = st.selectbox("Format", list(TOOL_FORMATS), key="studio-new-tool-format")
             new_tool_status = st.selectbox(
                 "Learner status",
                 ["Available", "Under construction"],
@@ -6000,13 +6518,15 @@ def _render_content_studio_tools(user: dict, snapshot: dict[str, dict]) -> None:
                     "lesson_links": links,
                     "status": new_tool_status,
                     "duration": "",
-                    "format": "Downloadable resource",
+                    "format": new_tool_format,
                     "description": "",
-                    "outcome": "",
+                    "website_url": "",
+                    "preview_url": "",
+                    "keywords": [],
                     "steps": [],
                 }
                 _content_studio_save_tool(new_tool_id, payload, (len(tools) + 1) * 10, user["user_id"])
-                _content_studio_flash("New tool draft created. Add details, resources and an optional image before publishing it.")
+                _content_studio_flash("New tool draft created. Add its description, optional links/previews, images and resources before publishing it.")
                 st.rerun()
 
 
@@ -6103,6 +6623,7 @@ URL_ROUTE_ALIASES = {
     "modules": "catalogue",
     "learning": "learning",
     "my-learning": "learning",
+    "resources": "resources",
     "tools": "tools",
     "glossary": "glossary",
     "contact": "contact",
@@ -6121,6 +6642,7 @@ ROUTE_TO_URL_PAGE = {
     "our-story": "our-story",
     "catalogue": "modules",
     "learning": "my-learning",
+    "resources": "resources",
     "tools": "tools",
     "glossary": "glossary",
     "contact": "contact",
@@ -6245,6 +6767,7 @@ CONTENT_STUDIO_SECTION_SLUGS = {
     "Checks & quizzes": "checks",
     "Convince files": "convince",
     "Tools & files": "tools",
+    "Resources": "resources",
     "Our stories": "stories",
     "Users & roles": "users",
     "Revision history": "revisions",
@@ -6536,7 +7059,7 @@ def page_admin(user):
 
     section_options = ["Modules & lessons", "Ideas & content", "Checks & quizzes"]
     if is_administrator(user):
-        section_options.extend(["Convince files", "Tools & files", "Our stories", "Users & roles", "Revision history", "Deployment"])
+        section_options.extend(["Convince files", "Tools & files", "Resources", "Our stories", "Users & roles", "Revision history", "Deployment"])
 
     # Keep the Content Studio on the section the user is actually working in.
     # st.tabs always jumps back to its first tab after many reruns and computes
@@ -6584,6 +7107,8 @@ def page_admin(user):
         _render_content_studio_convince_files(user, snapshot)
     elif active_section == "Tools & files" and is_administrator(user):
         _render_content_studio_tools(user, snapshot)
+    elif active_section == "Resources" and is_administrator(user):
+        _render_content_studio_library_resources(user, snapshot)
     elif active_section == "Our stories" and is_administrator(user):
         _render_content_studio_stories(user)
     elif active_section == "Users & roles" and is_administrator(user):
@@ -6632,11 +7157,15 @@ st.session_state.pop("selected_topic", None)
 
 apply_published_learning_content()
 if route == "results":
-    # Keep old sessions and bookmarks working after Results moved under My learning.
-    st.session_state["learning-section"] = "Results & sharing"
-    st.session_state.route = "learning"
-    route = "learning"
-    _write_route_query("learning")
+    st.session_state["learning-hub-section"] = "Results & sharing"
+    st.session_state.route = "catalogue"
+    route = "catalogue"
+    _write_route_query("catalogue")
+elif route == "learning":
+    st.session_state["learning-hub-section"] = "My learning"
+    st.session_state.route = "catalogue"
+    route = "catalogue"
+    _write_route_query("catalogue")
 protected_routes = {
     "learning",
     "community",
@@ -6661,6 +7190,8 @@ elif route == "learning":
     page_learning(user)
 elif route == "catalogue":
     page_catalogue(user)
+elif route == "resources":
+    page_resources(user)
 elif route == "tools":
     page_tools(user)
 elif route == "glossary":

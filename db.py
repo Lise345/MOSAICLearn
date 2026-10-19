@@ -49,6 +49,7 @@ SERVER_ONLY_PUBLIC_TABLES = (
     "cms_lessons",
     "cms_tools",
     "cms_stories",
+    "cms_library_resources",
     "cms_resource_files",
     "learning_content_revisions",
 )
@@ -287,6 +288,51 @@ def assert_postgres_security_hardened() -> None:
         + ", ".join(insecure)
     )
 
+
+
+def _seed_tool_format_drafts(conn) -> None:
+    """Add three unpublished examples so administrators can start from each non-workshop format."""
+    now = _now()
+    examples = (
+        (
+            "draft-website-example",
+            {
+                "id": "draft-website-example", "title": "Draft website example", "format": "Website",
+                "status": "Under construction", "duration": "", "description": "Replace this draft with a website-based MOSAIC resource.",
+                "website_url": "", "preview_url": "", "keywords": ["example"], "lesson_links": [], "module_id": "", "topic_id": "", "steps": [],
+            },
+            9100,
+        ),
+        (
+            "draft-model-example",
+            {
+                "id": "draft-model-example", "title": "Draft model example", "format": "Model",
+                "status": "Under construction", "duration": "", "description": "Replace this draft with a model or model-output page.",
+                "website_url": "", "preview_url": "", "keywords": ["example"], "lesson_links": [], "module_id": "", "topic_id": "", "steps": [],
+            },
+            9110,
+        ),
+        (
+            "draft-digital-tool-example",
+            {
+                "id": "draft-digital-tool-example", "title": "Draft digital tool example", "format": "Digital tool",
+                "status": "Under construction", "duration": "", "description": "Replace this draft with an interactive digital tool.",
+                "website_url": "", "preview_url": "", "keywords": ["example"], "lesson_links": [], "module_id": "", "topic_id": "", "steps": [],
+            },
+            9120,
+        ),
+    )
+    for tool_id, payload, sort_order in examples:
+        conn.execute(
+            _query(
+                """
+                INSERT INTO cms_tools(tool_id, draft_json, published_json, sort_order, archived, updated_by, updated_at, published_at)
+                VALUES (?, ?, '', ?, 0, '', ?, '')
+                ON CONFLICT(tool_id) DO NOTHING
+                """
+            ),
+            (tool_id, json.dumps(payload, ensure_ascii=False), int(sort_order), now),
+        )
 
 def init_db() -> None:
     if database_backend() == "postgres":
@@ -564,6 +610,20 @@ def init_db() -> None:
                 )
                 cur.execute(
                     """
+                    CREATE TABLE IF NOT EXISTS cms_library_resources (
+                        resource_id TEXT PRIMARY KEY,
+                        draft_json TEXT NOT NULL DEFAULT '',
+                        published_json TEXT NOT NULL DEFAULT '',
+                        sort_order INTEGER NOT NULL DEFAULT 0,
+                        archived INTEGER NOT NULL DEFAULT 0,
+                        updated_by TEXT DEFAULT '',
+                        updated_at TEXT DEFAULT '',
+                        published_at TEXT DEFAULT ''
+                    )
+                    """
+                )
+                cur.execute(
+                    """
                     CREATE TABLE IF NOT EXISTS cms_resource_files (
                         resource_id TEXT PRIMARY KEY,
                         scope_type TEXT NOT NULL,
@@ -585,6 +645,7 @@ def init_db() -> None:
                 cur.execute(
                     "CREATE INDEX IF NOT EXISTS idx_cms_resource_scope ON cms_resource_files(scope_type, scope_id, archived, sort_order, resource_id)"
                 )
+                _seed_tool_format_drafts(conn)
                 _harden_postgres_public_tables(cur)
         return
 
@@ -792,6 +853,17 @@ def init_db() -> None:
                 published_at TEXT DEFAULT ''
             );
 
+            CREATE TABLE IF NOT EXISTS cms_library_resources (
+                resource_id TEXT PRIMARY KEY,
+                draft_json TEXT NOT NULL DEFAULT '',
+                published_json TEXT NOT NULL DEFAULT '',
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                archived INTEGER NOT NULL DEFAULT 0,
+                updated_by TEXT DEFAULT '',
+                updated_at TEXT DEFAULT '',
+                published_at TEXT DEFAULT ''
+            );
+
             CREATE TABLE IF NOT EXISTS cms_resource_files (
                 resource_id TEXT PRIMARY KEY,
                 scope_type TEXT NOT NULL,
@@ -814,6 +886,7 @@ def init_db() -> None:
             """
         )
         _sqlite_add_missing_user_columns(conn)
+        _seed_tool_format_drafts(conn)
 
 
 def ensure_user(
@@ -999,6 +1072,10 @@ def delete_user_account(user_id: str) -> None:
         )
         conn.execute(
             _query("UPDATE cms_stories SET updated_by='' WHERE updated_by=?"),
+            (user_id,),
+        )
+        conn.execute(
+            _query("UPDATE cms_library_resources SET updated_by='' WHERE updated_by=?"),
             (user_id,),
         )
         conn.execute(
@@ -1568,11 +1645,140 @@ def set_cms_story_archived(
             (story_id, int(sort_order), int(bool(archived)), updated_by, now),
         )
 
+def list_cms_library_resources() -> list[dict]:
+    """Return resource-library CMS rows, including drafts and archived records."""
+    with _connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT resource_id, draft_json, published_json, sort_order, archived,
+                   updated_by, updated_at, published_at
+            FROM cms_library_resources
+            ORDER BY sort_order, resource_id
+            """
+        ).fetchall()
+    return [record for row in rows if (record := _decode_content_record(row))]
+
+
+def get_cms_library_resource(resource_id: str) -> dict | None:
+    with _connect() as conn:
+        row = conn.execute(
+            _query("SELECT * FROM cms_library_resources WHERE resource_id=?"),
+            (resource_id,),
+        ).fetchone()
+    return _decode_content_record(row)
+
+
+def save_cms_library_resource_draft(
+    resource_id: str,
+    content: dict,
+    sort_order: int,
+    updated_by: str,
+) -> None:
+    now = _now()
+    payload = json.dumps(content, ensure_ascii=False)
+    with _connect() as conn:
+        conn.execute(
+            _query(
+                """
+                INSERT INTO cms_library_resources(
+                    resource_id, draft_json, published_json, sort_order, archived,
+                    updated_by, updated_at, published_at
+                ) VALUES (?, ?, '', ?, 0, ?, ?, '')
+                ON CONFLICT(resource_id) DO UPDATE SET
+                    draft_json=excluded.draft_json,
+                    sort_order=excluded.sort_order,
+                    archived=0,
+                    updated_by=excluded.updated_by,
+                    updated_at=excluded.updated_at
+                """
+            ),
+            (resource_id, payload, int(sort_order), updated_by, now),
+        )
+
+
+def publish_cms_library_resource(
+    resource_id: str,
+    content: dict,
+    sort_order: int,
+    published_by: str,
+) -> None:
+    now = _now()
+    payload = json.dumps(content, ensure_ascii=False)
+    with _connect() as conn:
+        existing = _dict(
+            conn.execute(
+                _query("SELECT published_json FROM cms_library_resources WHERE resource_id=?"),
+                (resource_id,),
+            ).fetchone()
+        )
+        if existing and existing.get("published_json"):
+            conn.execute(
+                _query(
+                    """
+                    INSERT INTO learning_content_revisions(
+                        content_type, module_id, lesson_id, content_json,
+                        published_by, published_at
+                    ) VALUES ('library-resource', '', ?, ?, ?, ?)
+                    """
+                ),
+                (resource_id, existing["published_json"], published_by, now),
+            )
+        conn.execute(
+            _query(
+                """
+                INSERT INTO cms_library_resources(
+                    resource_id, draft_json, published_json, sort_order, archived,
+                    updated_by, updated_at, published_at
+                ) VALUES (?, ?, ?, ?, 0, ?, ?, ?)
+                ON CONFLICT(resource_id) DO UPDATE SET
+                    draft_json=excluded.draft_json,
+                    published_json=excluded.published_json,
+                    sort_order=excluded.sort_order,
+                    archived=0,
+                    updated_by=excluded.updated_by,
+                    updated_at=excluded.updated_at,
+                    published_at=excluded.published_at
+                """
+            ),
+            (resource_id, payload, payload, int(sort_order), published_by, now, now),
+        )
+
+
+def set_cms_library_resource_archived(
+    resource_id: str,
+    archived: bool,
+    updated_by: str,
+    *,
+    sort_order: int = 0,
+) -> None:
+    now = _now()
+    with _connect() as conn:
+        conn.execute(
+            _query(
+                """
+                INSERT INTO cms_library_resources(
+                    resource_id, draft_json, published_json, sort_order, archived,
+                    updated_by, updated_at, published_at
+                ) VALUES (?, '', '', ?, ?, ?, ?, '')
+                ON CONFLICT(resource_id) DO UPDATE SET
+                    archived=excluded.archived,
+                    sort_order=CASE
+                        WHEN cms_library_resources.sort_order=0 THEN excluded.sort_order
+                        ELSE cms_library_resources.sort_order
+                    END,
+                    updated_by=excluded.updated_by,
+                    updated_at=excluded.updated_at
+                """
+            ),
+            (resource_id, int(sort_order), int(bool(archived)), updated_by, now),
+        )
+
+
 def _validate_resource_scope(scope_type: str) -> str:
     scope = str(scope_type or "").strip().lower()
-    allowed = {"convince", "tool", "tool_image", "idea"}
+    allowed = {"convince", "tool", "tool_image", "tool_gallery", "idea", "library"}
     if scope not in allowed:
-        raise ValueError("scope_type must be one of: convince, tool, tool_image, idea")
+        raise ValueError("scope_type must be one of: convince, tool, tool_image, tool_gallery, idea, library")
     return scope
 
 
