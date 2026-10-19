@@ -43,6 +43,7 @@ from db import (
     get_carousel_content,
     get_cms_lesson,
     get_cms_module,
+    get_cms_story,
     get_cms_resource_file,
     get_cms_tool,
     get_community_activity,
@@ -59,6 +60,7 @@ from db import (
     list_content_revisions,
     list_cms_lessons,
     list_cms_modules,
+    list_cms_stories,
     list_cms_resource_files,
     list_cms_tools,
     list_published_carousels,
@@ -67,6 +69,7 @@ from db import (
     publish_carousel_content,
     publish_cms_lesson,
     publish_cms_module,
+    publish_cms_story,
     publish_cms_tool,
     record_privacy_acceptance,
     request_mycelium_connection,
@@ -75,12 +78,14 @@ from db import (
     save_carousel_draft,
     save_cms_lesson_draft,
     save_cms_module_draft,
+    save_cms_story_draft,
     save_cms_resource_file,
     save_cms_tool_draft,
     save_topic_progress,
     set_account_role,
     set_cms_lesson_archived,
     set_cms_module_archived,
+    set_cms_story_archived,
     set_cms_resource_archived,
     set_cms_tool_archived,
     toggle_community_reaction,
@@ -105,10 +110,26 @@ PRIVACY_POLICY_EFFECTIVE_DATE = "21 September 2026"
 # Change this value whenever init_db() gains a migration. It is passed into the
 # cached initializer so Streamlit Cloud cannot reuse a pre-migration cache entry
 # after a hot deployment.
-DATABASE_SCHEMA_VERSION = "2026-10-01-content-studio-media-links-v3"
+DATABASE_SCHEMA_VERSION = "2026-10-19-stories-v1"
 MOSAIC_NEWSLETTER_URL = "https://mosaic-europe.eu/mosaic/sign-up"
 LANDING_STORY_VIDEO_URL = "https://www.youtube.com/watch?v=ppWj_rbRfxw"
-APP_BUILD_ID = "2026-10-01-landing-story-convince-v8"
+APP_BUILD_ID = "2026-10-19-v8-all-modules-v81"
+
+
+DEFAULT_STORIES = {
+    "belgium-grassland-flexibility": {
+        "title": "What if protecting grassland gives farmers a reason to plough it?",
+        "place": "Belgium · Flemish Ardennes",
+        "intro": "Imagine a farmer looking at a four-year-old meadow. Keeping it as grassland seems good for nature, but the farmer also needs flexibility. What if the farm changes, the land needs another use, or a future generation wants to farm differently?",
+        "case_body": "In the Flemish Ardennes, MOSAIC found that some farmers plough temporary grassland before it acquires permanent status after five years. The associated restrictions make them worried about losing future options. A measure intended to protect grassland can therefore encourage its conversion.",
+        "response_heading": "But what if the policy started with understanding that decision?",
+        "response_body": "By interviewing farmers, mapping the incentives influencing their choices, and bringing landowners and policymakers together, the MOSAIC Policy Lab can reveal unintended consequences before new measures are designed. Future pathways can help explore alternatives that protect grassland while better accounting for agricultural flexibility.",
+        "lesson": "Protecting nature requires understanding the decisions of those managing it.",
+        "source_label": "Belgian Policy Lab · MOSAIC",
+        "source_url": "https://mosaic-europe.eu/mosaic/belgium-policy-lab",
+        "video_url": "",
+    }
+}
 
 # Prefer a dedicated square favicon, then the approved MOSAIC logo. The globe
 # is retained only as a last-resort fallback when neither image is installed.
@@ -254,6 +275,11 @@ def _cached_cms_tools() -> list[dict]:
     return list_cms_tools()
 
 
+@st.cache_data(ttl=45, show_spinner=False)
+def _cached_cms_stories() -> list[dict]:
+    return list_cms_stories()
+
+
 @st.cache_data(ttl=60, show_spinner=False)
 def _cached_resource_files(scope_type: str | None = None, scope_id: str | None = None, include_archived: bool = False) -> list[dict]:
     return list_cms_resource_files(scope_type, scope_id, include_archived=include_archived)
@@ -273,6 +299,7 @@ def _clear_content_studio_caches() -> None:
     _cached_cms_modules.clear()
     _cached_cms_lessons.clear()
     _cached_cms_tools.clear()
+    _cached_cms_stories.clear()
     _cached_resource_files.clear()
     _cached_resource_file.clear()
     _cached_content_revisions.clear()
@@ -461,6 +488,34 @@ html, body, [class*="css"] { font-family: Poppins, "Segoe UI", Arial, sans-serif
 .m-ground-story-copy h2 { margin:.42rem 0 .7rem; font-size:clamp(1.6rem,3vw,2.35rem); line-height:1.08; letter-spacing:-.025em; }
 .m-ground-story-copy p { margin:.35rem 0; color:#555b57; line-height:1.7; font-size:.96rem; }
 .m-ground-story-note { display:inline-flex; align-items:center; gap:.4rem; margin-top:.85rem; padding:.3rem .65rem; border:1px solid #d5dfd9; border-radius:999px; background:rgba(255,255,255,.84); color:var(--m-green); font-size:.74rem; font-weight:700; }
+
+.m-ground-story-action { margin-top:.85rem; }
+.m-story-hero { max-width:850px; margin:.45rem 0 1.35rem; }
+.m-story-hero h1 { margin:.35rem 0 .55rem; font-size:clamp(2rem,4vw,3.25rem); line-height:1.05; letter-spacing:-.035em; }
+.m-story-hero p { margin:0; max-width:70ch; color:var(--m-muted); line-height:1.65; }
+.m-story-card { border:1px solid var(--m-line); border-radius:20px; background:#fff; padding:1.1rem 1.15rem; height:100%; box-sizing:border-box; }
+.m-story-card .place { color:var(--m-green); font-size:.7rem; font-weight:800; text-transform:uppercase; letter-spacing:.08em; }
+.m-story-card h3 { margin:.45rem 0 .45rem; font-size:1.08rem; line-height:1.3; }
+.m-story-card p { margin:0; color:var(--m-muted); font-size:.86rem; line-height:1.55; }
+.m-story-detail { margin:1.4rem 0 2rem; padding:clamp(1.2rem,3vw,2rem); border:1px solid var(--m-line); border-radius:22px; background:linear-gradient(180deg,#fff 0%,#fbfbf8 100%); }
+.m-story-detail .place { color:var(--m-green); font-size:.72rem; font-weight:800; text-transform:uppercase; letter-spacing:.085em; }
+.m-story-detail h2 { margin:.45rem 0 1rem; max-width:31ch; font-size:clamp(1.65rem,3vw,2.35rem); line-height:1.12; letter-spacing:-.025em; }
+.m-story-detail h3 { margin:1.35rem 0 .45rem; font-size:1.2rem; }
+.m-story-detail p { max-width:76ch; color:#4f5550; line-height:1.72; }
+.m-story-lesson { margin:1.35rem 0 .7rem; padding:1rem 1.1rem; border-left:4px solid var(--m-green); background:var(--m-green-10); border-radius:0 14px 14px 0; font-weight:700; line-height:1.55; }
+.m-story-source { margin-top:.75rem; font-size:.8rem; color:var(--m-muted); }
+.m-story-source a { color:var(--m-blue) !important; text-decoration:none !important; font-weight:700; }
+.m-story-source a:hover { text-decoration:underline !important; }
+
+[class*="st-key-catalogue_starting_guide"] { margin:2.8rem 0 1.2rem; padding:clamp(1.25rem,3vw,2.25rem); border:1px solid var(--m-line); border-radius:24px; background:linear-gradient(145deg,#fbfbf8 0%,#f4f5ef 100%); }
+[class*="st-key-catalogue_starting_guide"] .m-start-question { margin:1.8rem 0 .8rem; padding-top:1.3rem; border-top:1px solid var(--m-line); text-align:left; max-width:none; }
+[class*="st-key-catalogue_starting_guide"] .m-start-question h3 { font-size:1.45rem; }
+[class*="st-key-catalogue_start_choice_"] { height:100%; padding:1rem; border:1px solid var(--m-line); border-radius:17px; background:#fff; display:flex; flex-direction:column; }
+[class*="st-key-catalogue_start_choice_"] .m-start-choice { min-height:138px; padding:0; margin:0 0 .65rem; border:0; border-radius:0; background:transparent; }
+[class*="st-key-catalogue_start_choice_"] [data-testid="stButton"] { margin-top:auto; }
+[class*="st-key-catalogue_start_choice_drivers"] { border-top:5px solid var(--m-blue); }
+[class*="st-key-catalogue_start_choice_policy-lab"] { border-top:5px solid var(--m-green); }
+[class*="st-key-catalogue_start_choice_future-pathways"] { border-top:5px solid var(--m-ochre); }
 [class*="st-key-ground_story"] [data-testid="stVideo"] { border-radius:18px; overflow:hidden; box-shadow:0 10px 28px rgba(31,55,46,.12); background:#111; }
 
 .m-section-title { margin:2.1rem 0 .8rem; }
@@ -995,6 +1050,66 @@ def _published_carousels() -> list[dict]:
     """Avoid a Supabase round trip on every Streamlit rerun."""
     return list_published_carousels()
 
+
+
+def _normalise_story_payload(story_id: str, payload: dict | None) -> dict:
+    data = copy.deepcopy(payload or {})
+    data["id"] = story_id
+    data["title"] = str(data.get("title") or "Untitled story").strip()
+    data["place"] = str(data.get("place") or "").strip()
+    data["intro"] = str(data.get("intro") or "").strip()
+    data["case_body"] = str(data.get("case_body") or "").strip()
+    data["response_heading"] = str(data.get("response_heading") or "What changed when the decision was understood?").strip()
+    data["response_body"] = str(data.get("response_body") or "").strip()
+    data["lesson"] = str(data.get("lesson") or "").strip()
+    data["source_label"] = str(data.get("source_label") or "Source").strip()
+    data["source_url"] = str(data.get("source_url") or "").strip()
+    data["video_url"] = str(data.get("video_url") or "").strip()
+    return data
+
+
+def _published_stories() -> list[dict]:
+    defaults = {story_id: _normalise_story_payload(story_id, payload) for story_id, payload in DEFAULT_STORIES.items()}
+    order = {story_id: index for index, story_id in enumerate(DEFAULT_STORIES, start=1)}
+    for row in _cached_cms_stories():
+        story_id = str(row.get("story_id") or "").strip()
+        if not story_id:
+            continue
+        if row.get("archived"):
+            defaults.pop(story_id, None)
+            continue
+        if row.get("published"):
+            defaults[story_id] = _normalise_story_payload(story_id, row["published"])
+            order[story_id] = int(row.get("sort_order") or order.get(story_id, 999))
+    return sorted(defaults.values(), key=lambda item: (order.get(item["id"], 999), item["title"].casefold()))
+
+
+def _story_admin_snapshot() -> dict[str, dict]:
+    snapshot = {
+        story_id: {
+            "story_id": story_id,
+            "draft": copy.deepcopy(payload),
+            "published": copy.deepcopy(payload),
+            "sort_order": index,
+            "archived": False,
+            "updated_at": "",
+            "published_at": "",
+            "_builtin": True,
+        }
+        for index, (story_id, payload) in enumerate(DEFAULT_STORIES.items(), start=1)
+    }
+    for row in _cached_cms_stories():
+        story_id = str(row.get("story_id") or "").strip()
+        if not story_id:
+            continue
+        base = snapshot.get(story_id, {})
+        merged = dict(base)
+        merged.update(row)
+        merged["_builtin"] = bool(base.get("_builtin"))
+        if not merged.get("draft"):
+            merged["draft"] = copy.deepcopy(base.get("draft") or merged.get("published") or {})
+        snapshot[story_id] = merged
+    return snapshot
 
 def _module_content_payload(module_id: str, module: dict) -> dict:
     payload = copy.deepcopy(module or {})
@@ -1875,6 +1990,7 @@ def render_sidebar(user: dict | None):
 
         items = [
             ("home", "⌂  Home"),
+            ("our-story", "◌  Our story"),
             ("catalogue", "▦  Modules"),
             ("learning", "◔  My learning"),
             ("tools", "◇  Tools"),
@@ -1995,6 +2111,8 @@ def page_home(user: dict | None):
                 """,
                 unsafe_allow_html=True,
             )
+            if st.button("Read our stories →", key="home-open-our-story", type="primary"):
+                navigate("our-story")
         with story_media:
             st.video(LANDING_STORY_VIDEO_URL)
 
@@ -2049,33 +2167,45 @@ def page_home(user: dict | None):
             ):
                 navigate(target_type, target_id)
 
-    learning_heading = "Continue learning" if user else "Explore the learning modules"
-    learning_intro = (
-        "Pick up the learning journey that is most useful right now."
-        if user
-        else "You can browse the catalogue and tools without an account. Sign in when you open a learning journey so your progress can be saved."
-    )
+    learning_heading = "Where do you want to start?"
+    learning_intro = "Explore all MOSAIC Learn modules. Start an available module now, or subscribe for updates when a module is still under construction."
+
     st.markdown(
         f"<div class='m-section-title'><h2>{learning_heading}</h2><p>{learning_intro}</p></div>",
         unsafe_allow_html=True,
     )
-    available = [(mid, m) for mid, m in MODULES.items() if m["status"] == "Available"]
-    if not available:
-        st.info("No learning modules are currently published as available.")
+    home_modules = list(MODULES.items())
+    if not home_modules:
+        st.info("No learning modules are currently published.")
     else:
-        cols = st.columns(min(2, len(available)))
-        for col, (module_id, module) in zip(cols, available):
-            with col:
+        column_count = min(3, len(home_modules))
+        cols = st.columns(column_count)
+        for idx, (module_id, module) in enumerate(home_modules):
+            with cols[idx % column_count]:
                 user_id = user["user_id"] if user else None
                 st.markdown(module_card_html(module_id, user_id), unsafe_allow_html=True)
-                if user:
-                    ratio, done, total = module_completion(user_id, module_id)
-                    topic_id = first_incomplete_topic(user_id, module_id)
-                    label = "Continue →" if done else "Start module →"
-                    if topic_id and st.button(label, key=f"home-continue-{module_id}", type="primary", width="stretch"):
-                        navigate("topic", module_id, topic_id)
-                elif st.button("Open learning journey →", key=f"home-continue-{module_id}", type="primary", width="stretch"):
-                    navigate("module", module_id)
+                if module.get("status") == "Available":
+                    if st.button(
+                        "Get started →",
+                        key=f"home-continue-{module_id}",
+                        type="primary",
+                        width="stretch",
+                    ):
+                        navigate("module", module_id)
+                elif _is_under_construction(module):
+                    st.link_button(
+                        "Under construction · subscribe for updates →",
+                        MOSAIC_NEWSLETTER_URL,
+                        type="secondary",
+                        width="stretch",
+                    )
+                else:
+                    st.button(
+                        str(module.get("status") or "Coming soon"),
+                        key=f"home-soon-{module_id}",
+                        disabled=True,
+                        width="stretch",
+                    )
 
 
 def page_catalogue(user: dict | None):
@@ -2105,9 +2235,9 @@ def page_catalogue(user: dict | None):
         alt="A heron standing among reeds and their reflections in the water",
         css_class="m-start-illustration",
     )
-    st.markdown(
-        f"""
-        <section class="m-start-guide">
+    with st.container(key="catalogue_starting_guide"):
+        st.markdown(
+            f"""
             <div class="m-start-intro">
                 <div class="m-start-copy">
                     <div class="m-kicker">Find your starting point</div>
@@ -2119,89 +2249,89 @@ def page_catalogue(user: dict | None):
             </div>
             <div class="m-start-question">
                 <h3>What brought you here today?</h3>
-                <p>Choose the question that comes closest. You can review the recommendation before opening a module.</p>
-            </div>
-        </section>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    starting_paths = [
-        (
-            "drivers",
-            "◎",
-            "Learning",
-            "Why is this happening?",
-            "Discover the drivers, relationships and feedbacks shaping the system.",
-        ),
-        (
-            "policy-lab",
-            "◫",
-            "Community",
-            "How can people move forward together?",
-            "Bring together people, organisations and perspectives around a shared challenge.",
-        ),
-        (
-            "future-pathways",
-            "↝",
-            "Empowerment",
-            "What future do we want to create?",
-            "Explore desirable futures and practical pathways towards them.",
-        ),
-    ]
-    choice_cols = st.columns(3)
-    for col, (module_id, icon, track, question, description) in zip(choice_cols, starting_paths):
-        with col:
-            st.markdown(
-                f"""
-                <div class="m-start-choice {track.lower()}">
-                    <div class="m-start-icon" aria-hidden="true">{icon}</div>
-                    <h4>{escape(question)}</h4>
-                    <p>{escape(description)}</p>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-            if st.button(
-                "This sounds like me",
-                key=f"starting-point-{module_id}",
-                width="stretch",
-            ):
-                st.session_state.catalogue_recommendation = module_id
-
-    recommendation_id = st.session_state.get("catalogue_recommendation")
-    if recommendation_id in MODULES:
-        recommended = MODULES[recommendation_id]
-        st.markdown(
-            f"""
-            <div class="m-start-recommendation">
-                <div class="m-kicker">Your suggested starting point</div>
-                <h3>{escape(recommended['short_title'])}</h3>
-                <p>{escape(recommended['description'])}</p>
-                <div class="m-module-meta">
-                    <span>{escape(recommended['track'])}</span><span>•</span><span>{recommended['estimated_minutes']} min</span>
-                </div>
+                <p>Choose the question that comes closest. Each choice points you to a useful starting module.</p>
             </div>
             """,
             unsafe_allow_html=True,
         )
-        open_col, reset_col = st.columns([1, 1])
-        with open_col:
-            if st.button(
-                "Open module →",
-                key="open-recommended-module",
-                type="primary",
-                width="stretch",
-            ):
-                navigate("module", recommendation_id)
-        with reset_col:
-            if st.button(
-                "Choose a different question",
-                key="reset-recommendation",
-                width="stretch",
-            ):
-                st.session_state.pop("catalogue_recommendation", None)
-                st.rerun()
+
+        starting_paths = [
+            (
+                "drivers",
+                "◎",
+                "Learning",
+                "Why is this happening?",
+                "Discover the drivers, relationships and feedbacks shaping the system.",
+            ),
+            (
+                "policy-lab",
+                "◫",
+                "Community",
+                "How can people move forward together?",
+                "Bring together people, organisations and perspectives around a shared challenge.",
+            ),
+            (
+                "future-pathways",
+                "↝",
+                "Empowerment",
+                "What future do we want to create?",
+                "Explore desirable futures and practical pathways towards them.",
+            ),
+        ]
+        choice_cols = st.columns(3, gap="medium")
+        for col, (module_id, icon, track, question, description) in zip(choice_cols, starting_paths):
+            with col:
+                with st.container(key=f"catalogue_start_choice_{module_id}"):
+                    st.markdown(
+                        f"""
+                        <div class="m-start-choice {track.lower()}">
+                            <div class="m-start-icon" aria-hidden="true">{icon}</div>
+                            <h4>{escape(question)}</h4>
+                            <p>{escape(description)}</p>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                    )
+                    if st.button(
+                        "Choose this question",
+                        key=f"starting-point-{module_id}",
+                        width="stretch",
+                    ):
+                        st.session_state.catalogue_recommendation = module_id
+
+        recommendation_id = st.session_state.get("catalogue_recommendation")
+        if recommendation_id in MODULES:
+            recommended = MODULES[recommendation_id]
+            st.markdown(
+                f"""
+                <div class="m-start-recommendation">
+                    <div class="m-kicker">Your suggested starting point</div>
+                    <h3>{escape(recommended['short_title'])}</h3>
+                    <p>{escape(recommended['description'])}</p>
+                    <div class="m-module-meta">
+                        <span>{escape(recommended['track'])}</span><span>•</span><span>{recommended['estimated_minutes']} min</span>
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            open_col, reset_col = st.columns([1, 1])
+            with open_col:
+                if st.button(
+                    "Open module →",
+                    key="open-recommended-module",
+                    type="primary",
+                    width="stretch",
+                ):
+                    navigate("module", recommendation_id)
+            with reset_col:
+                if st.button(
+                    "Choose a different question",
+                    key="reset-recommendation",
+                    width="stretch",
+                ):
+                    st.session_state.pop("catalogue_recommendation", None)
+                    st.rerun()
 
 
 GLOSSARY_TERMS = [
@@ -5967,6 +6097,8 @@ def _render_content_studio_status(snapshot: dict[str, dict]) -> None:
 # browser Back/Forward can restore the previous view.
 URL_ROUTE_ALIASES = {
     "home": "home",
+    "our-story": "our-story",
+    "story": "our-story",
     "catalogue": "catalogue",
     "modules": "catalogue",
     "learning": "learning",
@@ -5986,6 +6118,7 @@ URL_ROUTE_ALIASES = {
 }
 ROUTE_TO_URL_PAGE = {
     "home": "home",
+    "our-story": "our-story",
     "catalogue": "modules",
     "learning": "my-learning",
     "tools": "tools",
@@ -6112,6 +6245,7 @@ CONTENT_STUDIO_SECTION_SLUGS = {
     "Checks & quizzes": "checks",
     "Convince files": "convince",
     "Tools & files": "tools",
+    "Our stories": "stories",
     "Users & roles": "users",
     "Revision history": "revisions",
     "Deployment": "deployment",
@@ -6190,6 +6324,170 @@ def _persist_idea_draft_if_valid(
     _clear_content_studio_caches()
     return True
 
+
+def page_our_story(user: dict | None):
+    stories = _published_stories()
+    st.markdown(
+        """
+        <div class="m-story-hero">
+            <div class="m-kicker">Our story</div>
+            <h1>Land-use decisions, told from the ground</h1>
+            <p>Short MOSAIC stories about what changes when policy, research and land management meet in real places.</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    if not stories:
+        st.info("No stories are published yet.")
+        return
+
+    selected_id = str(st.session_state.get("our-story-selected") or stories[0]["id"])
+    if selected_id not in {story["id"] for story in stories}:
+        selected_id = stories[0]["id"]
+
+    if len(stories) > 1:
+        cols = st.columns(min(3, len(stories)), gap="medium")
+        for index, story in enumerate(stories):
+            with cols[index % len(cols)]:
+                st.markdown(
+                    f"""
+                    <div class="m-story-card">
+                        <div class="place">{escape(story['place'])}</div>
+                        <h3>{escape(story['title'])}</h3>
+                        <p>{escape(story['intro'][:180] + ('…' if len(story['intro']) > 180 else ''))}</p>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+                if st.button("Read story →", key=f"read-story-{story['id']}", width="stretch"):
+                    st.session_state["our-story-selected"] = story["id"]
+                    st.rerun()
+
+    story = next(item for item in stories if item["id"] == selected_id)
+    source_html = ""
+    if story.get("source_url"):
+        source_html = f'<div class="m-story-source">Source: <a href="{escape(story["source_url"])}" target="_blank" rel="noopener noreferrer">{escape(story.get("source_label") or "MOSAIC source")}</a></div>'
+    st.markdown(
+        f"""
+        <article class="m-story-detail">
+            <div class="place">{escape(story['place'])}</div>
+            <h2>{escape(story['title'])}</h2>
+            <p>{escape(story['intro'])}</p>
+            <p>{escape(story['case_body'])}</p>
+            <h3>{escape(story['response_heading'])}</h3>
+            <p>{escape(story['response_body'])}</p>
+            <div class="m-story-lesson">The lesson: {escape(story['lesson'])}</div>
+            {source_html}
+        </article>
+        """,
+        unsafe_allow_html=True,
+    )
+    if story.get("video_url"):
+        st.video(story["video_url"])
+
+
+def _render_content_studio_stories(user: dict) -> None:
+    """Administrator story editor. Built-in stories become CMS records when saved."""
+    st.subheader("Our stories")
+    st.caption("Create, edit, publish and archive stories shown on the public Our story page.")
+    snapshot = _story_admin_snapshot()
+    active_ids = [story_id for story_id, row in snapshot.items() if not row.get("archived")]
+    archived_ids = [story_id for story_id, row in snapshot.items() if row.get("archived")]
+
+    create_col, archive_col = st.columns([2, 1])
+    with create_col:
+        new_title = st.text_input("New story title", key="story-new-title", placeholder="e.g. When water changes what a farm can become")
+        if st.button("Add story", key="story-add", type="primary", disabled=not new_title.strip()):
+            base = re.sub(r"[^a-z0-9]+", "-", new_title.casefold()).strip("-") or f"story-{uuid4().hex[:8]}"
+            story_id = base
+            suffix = 2
+            while story_id in snapshot:
+                story_id = f"{base}-{suffix}"
+                suffix += 1
+            payload = _normalise_story_payload(story_id, {"title": new_title.strip()})
+            sort_order = max([int(row.get("sort_order") or 0) for row in snapshot.values()] + [0]) + 10
+            save_cms_story_draft(story_id, payload, sort_order, user["user_id"])
+            _clear_content_studio_caches()
+            st.session_state["story-admin-select"] = story_id
+            st.session_state["content-studio-flash"] = "Story draft created."
+            st.rerun()
+    with archive_col:
+        st.metric("Published / active", len(active_ids))
+
+    if not snapshot:
+        st.info("Create the first story above.")
+        return
+
+    ordered_ids = sorted(snapshot, key=lambda story_id: (int(snapshot[story_id].get("sort_order") or 0), story_id))
+    labels = {
+        story_id: f"{(snapshot[story_id].get('draft') or snapshot[story_id].get('published') or DEFAULT_STORIES.get(story_id, {})).get('title', story_id)}{' · archived' if snapshot[story_id].get('archived') else ''}"
+        for story_id in ordered_ids
+    }
+    selected_id = st.selectbox(
+        "Story",
+        ordered_ids,
+        format_func=lambda story_id: labels[story_id],
+        key="story-admin-select",
+    )
+    row = snapshot[selected_id]
+    content = _normalise_story_payload(selected_id, row.get("draft") or row.get("published") or DEFAULT_STORIES.get(selected_id, {}))
+
+    with st.form(f"story-editor-{selected_id}"):
+        title = st.text_input("Title / opening question", value=content["title"])
+        place = st.text_input("Place", value=content["place"], placeholder="Belgium · Flemish Ardennes")
+        intro = st.text_area("Opening", value=content["intro"], height=120)
+        case_body = st.text_area("What happens on the ground", value=content["case_body"], height=150)
+        response_heading = st.text_input("Response heading", value=content["response_heading"])
+        response_body = st.text_area("How MOSAIC methods help", value=content["response_body"], height=150)
+        lesson = st.text_area("Lesson", value=content["lesson"], height=90)
+        source_label = st.text_input("Source label", value=content["source_label"])
+        source_url = st.text_input("Source URL", value=content["source_url"])
+        video_url = st.text_input("Optional video URL", value=content["video_url"])
+        sort_order = st.number_input("Order", min_value=0, value=int(row.get("sort_order") or 0), step=10)
+        save_draft = st.form_submit_button("Save draft", type="primary")
+        publish_story = st.form_submit_button("Publish story")
+
+    payload = _normalise_story_payload(
+        selected_id,
+        {
+            "title": title,
+            "place": place,
+            "intro": intro,
+            "case_body": case_body,
+            "response_heading": response_heading,
+            "response_body": response_body,
+            "lesson": lesson,
+            "source_label": source_label,
+            "source_url": source_url,
+            "video_url": video_url,
+        },
+    )
+    if save_draft:
+        save_cms_story_draft(selected_id, payload, int(sort_order), user["user_id"])
+        _clear_content_studio_caches()
+        st.session_state["content-studio-flash"] = "Story draft saved."
+        st.rerun()
+    if publish_story:
+        publish_cms_story(selected_id, payload, int(sort_order), user["user_id"])
+        _clear_content_studio_caches()
+        st.session_state["content-studio-flash"] = "Story published."
+        st.rerun()
+
+    action_a, action_b = st.columns(2)
+    with action_a:
+        if row.get("archived") and st.button("Restore story", key=f"story-restore-{selected_id}"):
+            set_cms_story_archived(selected_id, False, user["user_id"], sort_order=int(sort_order))
+            _clear_content_studio_caches()
+            st.rerun()
+    with action_b:
+        if not row.get("archived") and st.button("Archive story", key=f"story-archive-{selected_id}"):
+            set_cms_story_archived(selected_id, True, user["user_id"], sort_order=int(sort_order))
+            _clear_content_studio_caches()
+            st.rerun()
+
+    if archived_ids:
+        st.caption(f"Archived stories: {len(archived_ids)}")
+
 def page_admin(user):
     """Content studio for editors plus administrator-only publishing and resource management."""
     if not is_content_editor(user):
@@ -6238,7 +6536,7 @@ def page_admin(user):
 
     section_options = ["Modules & lessons", "Ideas & content", "Checks & quizzes"]
     if is_administrator(user):
-        section_options.extend(["Convince files", "Tools & files", "Users & roles", "Revision history", "Deployment"])
+        section_options.extend(["Convince files", "Tools & files", "Our stories", "Users & roles", "Revision history", "Deployment"])
 
     # Keep the Content Studio on the section the user is actually working in.
     # st.tabs always jumps back to its first tab after many reruns and computes
@@ -6286,6 +6584,8 @@ def page_admin(user):
         _render_content_studio_convince_files(user, snapshot)
     elif active_section == "Tools & files" and is_administrator(user):
         _render_content_studio_tools(user, snapshot)
+    elif active_section == "Our stories" and is_administrator(user):
+        _render_content_studio_stories(user)
     elif active_section == "Users & roles" and is_administrator(user):
         _render_content_studio_people(user)
     elif active_section == "Revision history" and is_administrator(user):
@@ -6355,6 +6655,8 @@ render_brandbar()
 
 if route == "home":
     page_home(user)
+elif route == "our-story":
+    page_our_story(user)
 elif route == "learning":
     page_learning(user)
 elif route == "catalogue":
