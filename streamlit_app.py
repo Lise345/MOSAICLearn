@@ -7,10 +7,14 @@ import io
 import json
 import re
 import zipfile
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from uuid import uuid4
 from pathlib import Path
-from html import escape
-from urllib.parse import quote, urlparse
+from html import escape, unescape
+from html.parser import HTMLParser
+from urllib.error import HTTPError, URLError
+from urllib.parse import quote, unquote, urljoin, urlparse
+from urllib.request import Request, urlopen
 
 import streamlit as st
 import streamlit.components.v1 as components
@@ -118,10 +122,30 @@ PRIVACY_POLICY_EFFECTIVE_DATE = "21 September 2026"
 # after a hot deployment.
 DATABASE_SCHEMA_VERSION = "2026-10-19-tool-formats-previews-v2"
 MOSAIC_NEWSLETTER_URL = "https://mosaic-europe.eu/mosaic/sign-up"
+MOSAIC_RESOURCE_REPOSITORY_URL = "https://mosaic-europe.eu/mosaic/mosaic-knowledge-repository"
+MOSAIC_RESOURCE_HOSTS = {"mosaic-europe.eu", "www.mosaic-europe.eu"}
+# Last-resort manifest of the resources currently published in the MOSAIC
+# Knowledge Repository. It is used only when Drupal serves too little listing
+# markup to discover the catalogue dynamically. Normal discovery (page markup,
+# pagination and sitemap) is still attempted first, so future resources can be
+# picked up without changing this list when the site exposes them normally.
+MOSAIC_RESOURCE_FALLBACK_PATHS = (
+    "/mosaic/resource/identifying-drivers-land-use-change",
+    "/mosaic/resource/solar-sprawl-in-rural-areas%3F-a-comparative-study-between-andalusia-and-alentejo-regions.",
+    "/mosaic/resource/systematic-review-digital-tools-systematic-review-available-digital-land-use-decision",
+    "/mosaic/resource/digital-land-use-decision-support-tools-in-europe%3A-a-systematic-review-using-the-prisma-method",
+    "/mosaic/resource/pathway-narratives-towards-a-nature-positive-european-union-land-system%3A-operationalising-the-nature-futures-framework-for-policy-objectives",
+    "/mosaic/resource/what-is-private-land-conservation%3F",
+    "/mosaic/resource/comprehensive-set-normative-policy-and-exploratory-scenarios-case-studies",
+    "/mosaic/resource/guideline-establishment-policy-lab",
+    "/mosaic/resource/introducing-mosaic",
+    "/mosaic/resource/co-designing-policy-lab",
+)
+MOSAIC_IMPORT_MAX_BYTES = 25 * 1024 * 1024
 TOOL_FORMATS = ("Workshop", "Website", "Model", "Digital tool")
 TOOL_FORMAT_ICONS = {"Workshop": "◫", "Website": "↗", "Model": "⌁", "Digital tool": "◇"}
 LANDING_STORY_VIDEO_URL = "https://www.youtube.com/watch?v=ppWj_rbRfxw"
-APP_BUILD_ID = "2026-10-19-tool-formats-previews-v10"
+APP_BUILD_ID = "2026-10-20-community-resource-ui-v13"
 
 
 DEFAULT_STORIES = {
@@ -782,6 +806,10 @@ html, body, [class*="css"] { font-family: Poppins, "Segoe UI", Arial, sans-serif
 .m-community-snapshot-item strong { display:block; font-size:1.05rem; color:var(--m-green); }
 .m-community-snapshot-item span { display:block; margin-top:.08rem; color:var(--m-muted); font-size:.68rem; line-height:1.25; }
 .m-community-invitation { margin:0 0 1.25rem; }
+[class*="st-key-community_navigation"] { margin:.45rem 0 1.2rem; padding:.72rem .82rem .32rem; border:1px solid var(--m-line); border-radius:16px; background:#fbfbfa; }
+[class*="st-key-community_navigation"] [data-testid="stSegmentedControl"] { margin:0; }
+[class*="st-key-community_navigation"] [data-testid="stCaptionContainer"] { margin-top:.2rem; }
+.m-community-section-lead.compact { margin:1rem 0 .55rem; }
 .m-community-section-lead { margin:1.35rem 0 .65rem; display:flex; gap:1rem; align-items:flex-end; justify-content:space-between; }
 .m-community-section-lead h2 { margin:.15rem 0 .15rem; font-size:1.38rem; letter-spacing:-.02em; }
 .m-community-section-lead p { margin:0; color:var(--m-muted); font-size:.88rem; line-height:1.55; max-width:760px; }
@@ -832,10 +860,10 @@ html, body, [class*="css"] { font-family: Poppins, "Segoe UI", Arial, sans-serif
     background:linear-gradient(145deg,#fff 0%,#f3f8f5 100%) !important;
     box-shadow:0 7px 22px rgba(21,105,80,.08) !important;
 }
-[class*="st-key-community_post_"] { margin:.75rem 0; padding:1.05rem 1.1rem .95rem; border:1px solid #e1e2de; border-radius:19px; background:#fff; box-shadow:0 3px 12px rgba(60,60,59,.035); }
+[class*="st-key-community_post_"] { margin:.8rem 0 1rem; padding:1rem 1.05rem .9rem; border:1px solid #e1e2de; border-radius:17px; background:#fff; box-shadow:0 2px 9px rgba(60,60,59,.025); }
 [class*="st-key-community_post_"] .m-post { margin:0 0 .55rem; padding:0; border:0; border-radius:0; }
-.m-post-meta { color:var(--m-muted); font-size:.75rem; margin-bottom:.55rem; }
-.m-post p { margin:0; white-space:pre-wrap; line-height:1.65; color:#444441; }
+.m-post-meta { color:var(--m-muted); font-size:.73rem; margin-bottom:.48rem; }
+.m-post p { margin:0; white-space:pre-wrap; line-height:1.6; color:#444441; }
 .m-reaction-summary { color:var(--m-muted); font-size:.76rem; line-height:2.5; text-align:right; }
 .m-comment { margin:.55rem 0; padding:.76rem .85rem; border-left:3px solid var(--m-cyan); border-radius:0 12px 12px 0; background:var(--m-cyan-10); }
 .m-comment-meta { margin-bottom:.25rem; color:var(--m-muted); font-size:.72rem; }
@@ -900,27 +928,53 @@ html, body, [class*="css"] { font-family: Poppins, "Segoe UI", Arial, sans-serif
 .m-library-hero, .m-tools-repo-hero { margin:.25rem 0 1rem; padding:1.3rem 1.4rem; border:1px solid var(--m-line); border-radius:20px; background:linear-gradient(135deg,#fff 0%,#f5f7f3 100%); }
 .m-library-hero h1, .m-tools-repo-hero h1 { margin:.25rem 0 .4rem; font-size:clamp(1.9rem,4vw,3rem); letter-spacing:-.03em; }
 .m-library-hero p, .m-tools-repo-hero p { max-width:850px; margin:0; color:var(--m-muted); line-height:1.6; }
-.m-resource-library-card { height:100%; box-sizing:border-box; padding:1rem 1.05rem; border:1px solid var(--m-line); border-radius:16px; background:#fff; }
-.m-tool-repo-card { height:100%; box-sizing:border-box; border:1px solid var(--m-line); border-top:5px solid var(--m-ochre); border-radius:18px; background:#fff; overflow:hidden; }
+.m-resource-library-card { height:320px; box-sizing:border-box; padding:1rem 1.05rem; margin:0 0 1.25rem; border:1px solid var(--m-line); border-radius:16px; background:#fff; display:flex; flex-direction:column; overflow:hidden; }
+.m-tool-repo-card { height:445px; box-sizing:border-box; border:1px solid var(--m-line); border-top:5px solid var(--m-ochre); border-radius:18px; background:#fff; overflow:hidden; display:flex; flex-direction:column; }
 .m-tool-repo-card.workshop { border-top-color:var(--m-ochre); }
 .m-tool-repo-card.website { border-top-color:var(--m-blue); }
 .m-tool-repo-card.model { border-top-color:var(--m-green); }
 .m-tool-repo-card.digital-tool { border-top-color:var(--m-wine); }
-.m-tool-card-media { height:150px; background:#f5f5f2; overflow:hidden; }
+.m-tool-card-media { height:150px; flex:0 0 150px; background:#f5f5f2; overflow:hidden; }
 .m-tool-card-media img { width:100%; height:100%; object-fit:cover; display:block; }
 .m-tool-card-placeholder { display:flex; align-items:center; justify-content:center; background:linear-gradient(135deg,#f7f7f4,#eceee9); }
 .m-tool-card-placeholder span { font-size:3rem; color:#9a9b95; }
-.m-tool-card-body { padding:1rem 1.05rem 1.05rem; }
+.m-tool-card-body { padding:1rem 1.05rem 1.05rem; display:flex; flex-direction:column; flex:1; min-height:0; }
 .m-tool-format-line { display:flex; align-items:center; gap:.42rem; margin:0 0 .45rem; font-size:.72rem; font-weight:800; letter-spacing:.055em; text-transform:uppercase; color:var(--m-grey); }
 .m-tool-format-icon { display:inline-flex; width:26px; height:26px; align-items:center; justify-content:center; border-radius:8px; background:#f0f1ed; font-size:.88rem; }
-.m-resource-library-card h3, .m-tool-repo-card h3 { margin:.42rem 0 .4rem; font-size:1.08rem; line-height:1.28; }
-.m-resource-library-card p, .m-tool-repo-card p { margin:.2rem 0 .7rem; color:var(--m-muted); font-size:.85rem; line-height:1.52; }
-.m-resource-badges, .m-tool-filter-tags { display:flex; gap:.35rem; flex-wrap:wrap; margin:.35rem 0 .45rem; }
+.m-resource-library-card h3, .m-tool-repo-card h3 { margin:.42rem 0 .4rem; font-size:1.08rem; line-height:1.28; display:-webkit-box; -webkit-box-orient:vertical; overflow:hidden; }
+.m-resource-library-card h3 { -webkit-line-clamp:2; min-height:2.75em; }
+.m-tool-repo-card h3 { -webkit-line-clamp:2; min-height:2.75em; }
+.m-resource-library-card p, .m-tool-repo-card p { margin:.2rem 0 .7rem; color:var(--m-muted); font-size:.85rem; line-height:1.52; display:-webkit-box; -webkit-box-orient:vertical; overflow:hidden; }
+.m-resource-library-card p { -webkit-line-clamp:4; }
+.m-tool-repo-card p { -webkit-line-clamp:4; }
+.m-resource-card-author { color:var(--m-muted); font-size:.75rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin:.05rem 0 .45rem; }
+.m-resource-badges, .m-tool-filter-tags { display:flex; gap:.35rem; flex-wrap:wrap; margin:.35rem 0 .45rem; overflow:hidden; max-height:3.1rem; }
 .m-resource-badge, .m-tool-filter-tag { display:inline-flex; align-items:center; padding:.2rem .5rem; border-radius:999px; font-size:.68rem; font-weight:700; background:#f0f1ed; color:#5c625d; }
 .m-resource-badge.mosaic { background:var(--m-green-10); color:var(--m-green); }
 .m-resource-badge.external { background:var(--m-blue-10); color:var(--m-blue); }
 .m-resource-library-card a { color:#1769aa !important; text-decoration:none !important; font-weight:700; }
 .m-resource-library-card a:hover { text-decoration:underline !important; }
+.m-resource-card-action { margin-top:auto; padding-top:.6rem; border-top:1px solid #ecece8; }
+.m-resource-card-action a { display:inline-flex; align-items:center; gap:.25rem; }
+.m-resource-detail { margin:.25rem 0 1.25rem; padding:clamp(1.25rem,3vw,2rem); border:1px solid var(--m-line); border-radius:22px; background:linear-gradient(135deg,#fff 0%,#f7f8f4 100%); }
+.m-resource-detail h1 { margin:.35rem 0 .65rem; max-width:980px; font-size:clamp(1.8rem,3.7vw,2.9rem); line-height:1.08; letter-spacing:-.03em; }
+.m-resource-detail p { max-width:940px; color:var(--m-muted); line-height:1.7; }
+.m-resource-detail-meta { display:flex; gap:.4rem; flex-wrap:wrap; margin:.75rem 0 0; }
+.m-resource-detail-meta span { padding:.25rem .55rem; border-radius:999px; background:#fff; border:1px solid var(--m-line); font-size:.72rem; font-weight:650; }
+.m-resource-download-shell { margin:1rem 0 1.4rem; padding:1.05rem 1.1rem .45rem; border:1px solid var(--m-line); border-radius:18px; background:#fff; }
+.m-resource-download-shell h2 { margin:.05rem 0 .3rem; font-size:1.25rem; }
+.m-resource-download-shell p { margin:0 0 .6rem; color:var(--m-muted); font-size:.86rem; }
+.m-agent-shell { margin:1rem 0 1.35rem; padding:1rem 1.05rem; border:1px solid #c8d9d1; border-radius:20px; background:linear-gradient(135deg,#edf5f2 0%,#ffffff 62%,#f1fafb 100%); box-shadow:0 7px 20px rgba(21,105,80,.045); }
+.m-agent-head { display:flex; align-items:center; justify-content:space-between; gap:1rem; margin-bottom:.8rem; }
+.m-agent-identity { display:flex; align-items:center; gap:.7rem; }
+.m-agent-avatar { width:42px; height:42px; border-radius:14px; display:flex; align-items:center; justify-content:center; background:var(--m-green); color:#fff; font-size:1.05rem; font-weight:800; box-shadow:inset 0 0 0 1px rgba(255,255,255,.25); }
+.m-agent-title strong { display:block; font-size:1rem; }
+.m-agent-title span { color:var(--m-muted); font-size:.76rem; }
+.m-agent-soon { flex:0 0 auto; padding:.25rem .55rem; border-radius:999px; background:#fff; border:1px solid #c8d9d1; color:var(--m-green); font-size:.68rem; font-weight:800; letter-spacing:.05em; text-transform:uppercase; }
+.m-agent-message { max-width:780px; margin:.2rem 0 .8rem 3rem; padding:.75rem .85rem; border-radius:4px 14px 14px 14px; background:#fff; border:1px solid #dce7e1; color:#4d5752; font-size:.86rem; line-height:1.55; }
+.m-agent-compose { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:.55rem; align-items:center; padding:.45rem; border:1px solid #d6dfda; border-radius:15px; background:#fff; }
+.m-agent-placeholder { min-height:42px; display:flex; align-items:center; padding:0 .7rem; color:#8a8f8b; font-size:.84rem; }
+.m-agent-send { min-width:42px; height:42px; border-radius:12px; display:flex; align-items:center; justify-content:center; background:#e7ece9; color:#9aa09c; font-weight:800; }
 .m-tool-detail { margin:.3rem 0 1rem; padding:1.35rem 1.45rem; border:1px solid var(--m-line); border-radius:22px; background:#fff; }
 .m-tool-detail h1 { margin:.35rem 0 .55rem; font-size:clamp(1.9rem,4vw,3rem); letter-spacing:-.03em; }
 .m-tool-detail p { max-width:850px; color:var(--m-muted); line-height:1.65; }
@@ -1339,6 +1393,841 @@ def _admin_tools_snapshot() -> dict[str, dict]:
     return dict(sorted(result.items(), key=lambda item: (int(item[1].get("_cms_sort_order") or 0), item[0])))
 
 
+
+class _MosaicRepositoryHtmlParser(HTMLParser):
+    """Small dependency-free HTML parser for the public MOSAIC repository."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.tokens: list[dict[str, str]] = []
+        self._current_href = ""
+        self._current_heading = ""
+
+    def handle_starttag(self, tag: str, attrs) -> None:
+        tag = str(tag or "").lower()
+        attrs_dict = dict(attrs or [])
+        if tag == "a":
+            self._current_href = str(attrs_dict.get("href") or "")
+        if tag in {"h1", "h2", "h3", "h4"}:
+            self._current_heading = tag
+
+    def handle_endtag(self, tag: str) -> None:
+        tag = str(tag or "").lower()
+        if tag == "a":
+            self._current_href = ""
+        if tag in {"h1", "h2", "h3", "h4"}:
+            self._current_heading = ""
+
+    def handle_data(self, data: str) -> None:
+        text = " ".join(unescape(str(data or "")).split())
+        if text:
+            self.tokens.append({
+                "text": text,
+                "href": self._current_href,
+                "heading": self._current_heading,
+            })
+
+
+def _mosaic_repository_url_allowed(url: str) -> bool:
+    try:
+        parsed = urlparse(str(url or "").strip())
+    except ValueError:
+        return False
+    return parsed.scheme == "https" and parsed.hostname in MOSAIC_RESOURCE_HOSTS
+
+
+def _mosaic_repository_request(url: str, *, max_bytes: int = 5 * 1024 * 1024, timeout: int = 25) -> tuple[bytes, str, str]:
+    """Fetch one trusted MOSAIC page/file with a strict size and host guard."""
+    if not _mosaic_repository_url_allowed(url):
+        raise ValueError("The importer only follows HTTPS links on mosaic-europe.eu.")
+    request = Request(
+        url,
+        headers={
+            "User-Agent": "MOSAIC-Learn-resource-importer/1.0 (+https://mosaic-europe.eu/)",
+            "Accept": "text/html,application/pdf;q=0.9,*/*;q=0.5",
+        },
+    )
+    try:
+        with urlopen(request, timeout=timeout) as response:
+            final_url = str(response.geturl() or url)
+            if not _mosaic_repository_url_allowed(final_url):
+                raise ValueError("The MOSAIC website redirected to a host the importer does not trust.")
+            content_length = response.headers.get("Content-Length")
+            if content_length:
+                try:
+                    if int(content_length) > max_bytes:
+                        raise ValueError(f"Remote file is larger than the {round(max_bytes / (1024 * 1024))} MB import limit.")
+                except ValueError as exc:
+                    if "larger than" in str(exc):
+                        raise
+            data = response.read(max_bytes + 1)
+            if len(data) > max_bytes:
+                raise ValueError(f"Remote file is larger than the {round(max_bytes / (1024 * 1024))} MB import limit.")
+            content_type = str(response.headers.get_content_type() or "application/octet-stream")
+            return data, content_type, final_url
+    except (HTTPError, URLError, TimeoutError) as exc:
+        raise RuntimeError(f"Could not fetch {url}: {exc}") from exc
+
+
+def _mosaic_repository_document(url: str) -> tuple[list[dict[str, str]], str, str]:
+    """Return parsed text tokens plus raw HTML for discovery fallbacks."""
+    data, content_type, final_url = _mosaic_repository_request(url)
+    if content_type not in {"text/html", "application/xhtml+xml"}:
+        raise RuntimeError(f"Expected a web page at {url}, but received {content_type}.")
+    html_text = data.decode("utf-8", errors="replace")
+    parser = _MosaicRepositoryHtmlParser()
+    parser.feed(html_text)
+    return parser.tokens, final_url, html_text
+
+
+def _mosaic_repository_html(url: str) -> tuple[list[dict[str, str]], str]:
+    tokens, final_url, _html_text = _mosaic_repository_document(url)
+    return tokens, final_url
+
+
+def _mosaic_canonical_resource_url(value: str, *, base_url: str) -> str:
+    """Normalize one same-site /mosaic/resource/... URL and discard everything else."""
+    candidate = unescape(str(value or "").strip()).replace("\\/", "/").replace("\\u002F", "/")
+    if not candidate:
+        return ""
+    candidate = urljoin(base_url, candidate)
+    try:
+        parsed = urlparse(candidate)
+    except ValueError:
+        return ""
+    if parsed.hostname not in MOSAIC_RESOURCE_HOSTS or not parsed.path.startswith("/mosaic/resource/"):
+        return ""
+    return f"https://{parsed.hostname}{parsed.path.rstrip('/')}"
+
+
+def _mosaic_resource_urls_from_document(
+    tokens: list[dict[str, str]],
+    html_text: str,
+    *,
+    base_url: str,
+) -> list[str]:
+    """Discover resource links from visible anchors and Drupal/JS-embedded markup."""
+    values: list[str] = []
+    seen: set[str] = set()
+
+    def add(raw_value: str) -> None:
+        canonical = _mosaic_canonical_resource_url(raw_value, base_url=base_url)
+        if canonical and canonical not in seen:
+            seen.add(canonical)
+            values.append(canonical)
+
+    for token in tokens:
+        add(str(token.get("href") or ""))
+
+    normalized_markup = unescape(str(html_text or "")).replace("\\/", "/").replace("\\u002F", "/")
+    pattern = r"(?:https://(?:www\.)?mosaic-europe\.eu)?/mosaic/resource/[^\s\"'<>\\#]+"
+    for match in re.findall(pattern, normalized_markup, flags=re.IGNORECASE):
+        add(match.rstrip(",;)]}"))
+    return values
+
+
+def _mosaic_resource_urls_from_sitemaps() -> list[str]:
+    """Fallback discovery for repositories whose cards are loaded dynamically."""
+    candidates = [
+        "https://mosaic-europe.eu/sitemap.xml",
+        "https://mosaic-europe.eu/sitemap_index.xml",
+        "https://www.mosaic-europe.eu/sitemap.xml",
+    ]
+    queue = list(candidates)
+    visited: set[str] = set()
+    resources: list[str] = []
+    resource_seen: set[str] = set()
+
+    while queue and len(visited) < 24:
+        sitemap_url = queue.pop(0)
+        if sitemap_url in visited:
+            continue
+        visited.add(sitemap_url)
+        try:
+            data, content_type, final_url = _mosaic_repository_request(
+                sitemap_url,
+                max_bytes=8 * 1024 * 1024,
+                timeout=18,
+            )
+        except Exception:
+            continue
+        if content_type not in {"application/xml", "text/xml", "text/plain", "application/octet-stream", "text/html"}:
+            continue
+        xml_text = data.decode("utf-8", errors="replace")
+        probe = xml_text[:600].casefold()
+        if "<urlset" not in probe and "<sitemapindex" not in probe:
+            continue
+        for raw_loc in re.findall(r"<loc[^>]*>(.*?)</loc>", xml_text, flags=re.IGNORECASE | re.DOTALL):
+            loc = unescape(re.sub(r"\s+", "", raw_loc)).strip()
+            resource_url = _mosaic_canonical_resource_url(loc, base_url=final_url)
+            if resource_url:
+                if resource_url not in resource_seen:
+                    resource_seen.add(resource_url)
+                    resources.append(resource_url)
+                continue
+            try:
+                parsed = urlparse(loc)
+            except ValueError:
+                continue
+            if (
+                parsed.scheme == "https"
+                and parsed.hostname in MOSAIC_RESOURCE_HOSTS
+                and (parsed.path.endswith(".xml") or "sitemap" in parsed.path.casefold())
+                and loc not in visited
+                and loc not in queue
+            ):
+                queue.append(loc)
+    return resources
+
+
+def _mosaic_label(value: str) -> str:
+    return re.sub(r"\s+", " ", str(value or "")).strip().rstrip(":").casefold()
+
+
+def _mosaic_section_text(
+    tokens: list[dict[str, str]],
+    start_labels: set[str],
+    stop_labels: set[str],
+    *,
+    max_tokens: int = 80,
+) -> str:
+    starts = {_mosaic_label(label) for label in start_labels}
+    stops = {_mosaic_label(label) for label in stop_labels}
+    collecting = False
+    collected: list[str] = []
+    for token in tokens:
+        text = str(token.get("text") or "").strip()
+        label = _mosaic_label(text)
+        if not collecting:
+            if label in starts:
+                collecting = True
+            continue
+        if label in stops:
+            break
+        if not text or label in starts:
+            continue
+        if not collected or collected[-1] != text:
+            collected.append(text)
+        if len(collected) >= max_tokens:
+            break
+    return " ".join(collected).strip()
+
+
+
+def _mosaic_section_values(
+    tokens: list[dict[str, str]],
+    start_labels: set[str],
+    stop_labels: set[str],
+    *,
+    max_tokens: int = 30,
+) -> list[str]:
+    starts = {_mosaic_label(label) for label in start_labels}
+    stops = {_mosaic_label(label) for label in stop_labels}
+    collecting = False
+    values: list[str] = []
+    for token in tokens:
+        text = str(token.get("text") or "").strip()
+        label = _mosaic_label(text)
+        if not collecting:
+            if label in starts:
+                collecting = True
+            continue
+        if label in stops:
+            break
+        if text and label not in starts and (not values or values[-1] != text):
+            values.append(text)
+        if len(values) >= max_tokens:
+            break
+    return values
+
+
+def _mosaic_section_link(
+    tokens: list[dict[str, str]],
+    start_labels: set[str],
+    stop_labels: set[str],
+    *,
+    base_url: str,
+) -> str:
+    starts = {_mosaic_label(label) for label in start_labels}
+    stops = {_mosaic_label(label) for label in stop_labels}
+    collecting = False
+    for token in tokens:
+        text = str(token.get("text") or "").strip()
+        label = _mosaic_label(text)
+        if not collecting:
+            if label in starts:
+                collecting = True
+            continue
+        if label in stops:
+            break
+        href = str(token.get("href") or "").strip()
+        if href:
+            candidate = urljoin(base_url, href)
+            try:
+                parsed = urlparse(candidate)
+            except ValueError:
+                continue
+            if parsed.scheme in {"http", "https"} and parsed.netloc:
+                return candidate
+    return ""
+
+
+
+def _mosaic_section_links(
+    tokens: list[dict[str, str]],
+    start_labels: set[str],
+    stop_labels: set[str],
+    *,
+    base_url: str,
+) -> list[str]:
+    starts = {_mosaic_label(label) for label in start_labels}
+    stops = {_mosaic_label(label) for label in stop_labels}
+    collecting = False
+    links: list[str] = []
+    for token in tokens:
+        text = str(token.get("text") or "").strip()
+        label = _mosaic_label(text)
+        if not collecting:
+            if label in starts:
+                collecting = True
+            continue
+        if label in stops:
+            break
+        href = str(token.get("href") or "").strip()
+        if not href:
+            continue
+        candidate = urljoin(base_url, href)
+        try:
+            parsed = urlparse(candidate)
+        except ValueError:
+            continue
+        if parsed.scheme in {"http", "https"} and parsed.netloc and candidate not in links:
+            links.append(candidate)
+    return links
+
+
+def _mosaic_guess_resource_type(title: str, description: str, pdf_url: str) -> str:
+    haystack = f"{title} {description}".casefold()
+    if any(term in haystack for term in ("systematic review", "journal article", "paper", "publication")):
+        return "Paper"
+    if any(term in haystack for term in ("deliverable", "report", "guideline", "guidelines")) or pdf_url:
+        return "Report"
+    return "Resource"
+
+
+def _mosaic_resource_fingerprint(item: dict) -> str:
+    fields = {
+        key: item.get(key) or ([] if key == "tags" else "")
+        for key in (
+            "title", "description", "authors", "publication_date", "year",
+            "resource_type", "source_page_url", "publication_url", "pdf_url", "pdf_urls", "tags",
+        )
+    }
+    return hashlib.sha256(
+        json.dumps(fields, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    ).hexdigest()
+
+
+def _mosaic_parse_resource_detail(source_url: str) -> dict:
+    tokens, final_url = _mosaic_repository_html(source_url)
+    title = next(
+        (
+            str(token.get("text") or "").strip()
+            for token in tokens
+            if token.get("heading") == "h1" and str(token.get("text") or "").strip()
+        ),
+        "",
+    )
+    stop_labels = {
+        "Author/Contact", "Author/Contact:", "Publication date", "Publication date:",
+        "Resource link", "Resource link:", "Resource download", "Resource download:",
+        "Keywords", "Keywords:", "Resource type", "Resource type:", "Details",
+    }
+    description = _mosaic_section_text(
+        tokens,
+        {"Resource description", "Resource description:"},
+        stop_labels,
+    )
+    authors = _mosaic_section_text(
+        tokens,
+        {"Author/Contact", "Author/Contact:"},
+        {"Publication date", "Publication date:", "Resource link", "Resource link:", "Resource download", "Resource download:"},
+        max_tokens=12,
+    )
+    publication_date = _mosaic_section_text(
+        tokens,
+        {"Publication date", "Publication date:"},
+        {"Quality assurance", "Quality assurance:", "Resource link", "Resource link:", "Resource download", "Resource download:", "Keywords", "Keywords:"},
+        max_tokens=4,
+    )
+    year_match = re.search(r"\b(?:19|20)\d{2}\b", publication_date)
+    year = year_match.group(0) if year_match else ""
+    publication_url = _mosaic_section_link(
+        tokens,
+        {"Resource link", "Resource link:"},
+        {"Resource download", "Resource download:", "Keywords", "Keywords:", "Resource type", "Resource type:"},
+        base_url=final_url,
+    )
+    pdf_urls = _mosaic_section_links(
+        tokens,
+        {"Resource download", "Resource download:"},
+        {"Keywords", "Keywords:", "Resource type", "Resource type:", "Scale", "Scale:", "Project", "Project:", "Details", "Mosaic footer"},
+        base_url=final_url,
+    )
+    pdf_url = pdf_urls[0] if pdf_urls else ""
+    keyword_values = _mosaic_section_values(
+        tokens,
+        {"Keywords", "Keywords:"},
+        {"Resource type", "Resource type:", "Scale", "Scale:", "Project", "Project:", "Details", "Funding"},
+        max_tokens=20,
+    )
+    tags: list[str] = []
+    for value in keyword_values:
+        for item in re.split(r"[,;|]", value):
+            item = item.strip()
+            if item and len(item) <= 80 and item not in tags:
+                tags.append(item)
+    resource_type = _mosaic_section_text(
+        tokens,
+        {"Resource type", "Resource type:"},
+        {"Scale", "Scale:", "Project", "Project:", "Details", "Funding", "Keywords", "Keywords:"},
+        max_tokens=3,
+    )
+    if not resource_type or len(resource_type) > 80:
+        resource_type = _mosaic_guess_resource_type(title, description, pdf_url)
+    source_id = unquote(urlparse(final_url).path.rstrip("/").split("/")[-1]).strip().casefold()
+    item = {
+        "source_id": source_id,
+        "title": title or source_id.replace("-", " ").title(),
+        "description": description,
+        "authors": authors,
+        "publication_date": publication_date,
+        "year": year,
+        "resource_type": resource_type,
+        "source_page_url": final_url,
+        "publication_url": publication_url,
+        "pdf_url": pdf_url,
+        "pdf_urls": pdf_urls,
+        "tags": list(dict.fromkeys(tags)),
+    }
+    item["fingerprint"] = _mosaic_resource_fingerprint(item)
+    return item
+
+
+@st.cache_data(ttl=900, show_spinner=False)
+def _fetch_mosaic_repository_items() -> dict:
+    """Read the public MOSAIC repository and return normalized resource metadata.
+
+    Drupal can expose different amounts of repository markup to different
+    clients, so discovery combines direct anchors, embedded raw URLs,
+    pagination variants, and the site's XML sitemap.
+    """
+    resource_urls: list[str] = []
+    seen: set[str] = set()
+    discovery = {"repository": 0, "pagination": 0, "sitemap": 0, "fallback": 0}
+    repository_url = MOSAIC_RESOURCE_REPOSITORY_URL
+
+    def add_many(urls: list[str], source: str) -> int:
+        added = 0
+        for candidate in urls:
+            canonical = _mosaic_canonical_resource_url(candidate, base_url=repository_url)
+            if canonical and canonical not in seen:
+                seen.add(canonical)
+                resource_urls.append(canonical)
+                added += 1
+        discovery[source] = discovery.get(source, 0) + added
+        return added
+
+    tokens, repository_url, html_text = _mosaic_repository_document(MOSAIC_RESOURCE_REPOSITORY_URL)
+    add_many(
+        _mosaic_resource_urls_from_document(tokens, html_text, base_url=repository_url),
+        "repository",
+    )
+
+    no_new_pages = 0
+    page_candidates = ["https://mosaic-europe.eu/mosaic/mosaic-resources"] + [
+        f"{MOSAIC_RESOURCE_REPOSITORY_URL}?page={page}" for page in range(0, 12)
+    ]
+    for page_url in page_candidates:
+        try:
+            page_tokens, page_final_url, page_html = _mosaic_repository_document(page_url)
+        except Exception:
+            continue
+        added = add_many(
+            _mosaic_resource_urls_from_document(page_tokens, page_html, base_url=page_final_url),
+            "pagination",
+        )
+        no_new_pages = 0 if added else no_new_pages + 1
+        if no_new_pages >= 4 and len(resource_urls) >= 2:
+            break
+
+    add_many(_mosaic_resource_urls_from_sitemaps(), "sitemap")
+
+    # Some Streamlit Cloud requests receive a minimally rendered Drupal view
+    # even though the browser-visible repository contains many cards. If all
+    # dynamic discovery layers still yield fewer than two items, seed the known
+    # current catalogue so the importer remains useful. These URLs are then
+    # validated by fetching their individual resource pages below.
+    if len(resource_urls) < 2:
+        add_many(
+            [urljoin(MOSAIC_RESOURCE_REPOSITORY_URL, path) for path in MOSAIC_RESOURCE_FALLBACK_PATHS],
+            "fallback",
+        )
+
+    if not resource_urls:
+        raise RuntimeError("No resource pages were found on the MOSAIC repository page or site sitemap.")
+
+    items: list[dict] = []
+    errors: list[str] = []
+    max_workers = min(6, max(1, len(resource_urls)))
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {executor.submit(_mosaic_parse_resource_detail, url): url for url in resource_urls}
+        for future in as_completed(futures):
+            url = futures[future]
+            try:
+                items.append(future.result())
+            except Exception as exc:
+                errors.append(f"{url}: {exc}")
+    order = {url: idx for idx, url in enumerate(resource_urls)}
+    items.sort(
+        key=lambda item: order.get(
+            _mosaic_canonical_resource_url(item.get("source_page_url", ""), base_url=repository_url),
+            9999,
+        )
+    )
+    return {
+        "repository_url": repository_url,
+        "found": len(resource_urls),
+        "items": items,
+        "errors": errors,
+        "discovery": discovery,
+    }
+
+
+def _normalised_external_url(value: str | None) -> str:
+    try:
+        parsed = urlparse(str(value or "").strip())
+    except ValueError:
+        return ""
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return ""
+    path = unquote(parsed.path or "").rstrip("/")
+    return f"{parsed.netloc.casefold()}{path}?{parsed.query}".rstrip("?")
+
+
+def _mosaic_import_match(resources: dict[str, dict], remote: dict) -> str:
+    remote_source = _normalised_external_url(remote.get("source_page_url"))
+    source_id = str(remote.get("source_id") or "").strip().casefold()
+    for resource_id, local in resources.items():
+        if source_id and str(local.get("import_source_id") or "").strip().casefold() == source_id:
+            return resource_id
+        if remote_source and _normalised_external_url(local.get("source_page_url")) == remote_source:
+            return resource_id
+    # Conservative fallback for resources added manually before the importer existed.
+    remote_publication = _normalised_external_url(remote.get("publication_url"))
+    remote_title = str(remote.get("title") or "").strip().casefold()
+    for resource_id, local in resources.items():
+        if str(local.get("origin") or "") != "MOSAIC content":
+            continue
+        if remote_title and str(local.get("title") or "").strip().casefold() != remote_title:
+            continue
+        local_publication = _normalised_external_url(local.get("publication_url") or local.get("source_url"))
+        if not remote_publication or not local_publication or remote_publication == local_publication:
+            return resource_id
+    return ""
+
+
+def _mosaic_import_state(resources: dict[str, dict], remote: dict) -> tuple[str, str]:
+    resource_id = _mosaic_import_match(resources, remote)
+    if not resource_id:
+        return "New", ""
+    local = resources[resource_id]
+    previous_fingerprint = str(local.get("import_fingerprint") or "")
+    if not previous_fingerprint:
+        return "Needs review", resource_id
+    if previous_fingerprint != str(remote.get("fingerprint") or ""):
+        return "Source changed", resource_id
+    return "Already in library", resource_id
+
+
+def _mosaic_resource_id(source_id: str, resources: dict[str, dict]) -> str:
+    slug = re.sub(r"[^a-z0-9-]+", "-", str(source_id or "resource").casefold()).strip("-")
+    slug = re.sub(r"-+", "-", slug) or "resource"
+    base = f"mosaic-{slug}"[:63].rstrip("-")
+    if len(base) < 2:
+        base = "mosaic-resource"
+    candidate = base
+    suffix = 2
+    while candidate in resources:
+        candidate = f"{base[:58].rstrip('-')}-{suffix}"
+        suffix += 1
+    return candidate
+
+
+def _mosaic_payload_from_remote(remote: dict, *, existing: dict | None = None) -> dict:
+    existing = copy.deepcopy(existing or {})
+    payload = {
+        key: value
+        for key, value in existing.items()
+        if not str(key).startswith("_cms_") and key != "_sort_order"
+    }
+    existing_tags = [str(item).strip() for item in payload.get("tags") or [] if str(item).strip()]
+    remote_tags = [str(item).strip() for item in remote.get("tags") or [] if str(item).strip()]
+    payload.update({
+        "title": str(remote.get("title") or payload.get("title") or "MOSAIC resource").strip(),
+        "origin": "MOSAIC content",
+        "resource_type": str(payload.get("resource_type") or remote.get("resource_type") or "Resource").strip(),
+        "authors": str(remote.get("authors") or "").strip(),
+        "year": str(remote.get("year") or "").strip(),
+        "publication_date": str(remote.get("publication_date") or "").strip(),
+        "description": str(remote.get("description") or "").strip(),
+        "source_page_url": str(remote.get("source_page_url") or "").strip(),
+        "publication_url": str(remote.get("publication_url") or "").strip(),
+        # source_url is retained as a backwards-compatible alias used by older builds.
+        "source_url": str(remote.get("publication_url") or "").strip(),
+        "tags": list(dict.fromkeys(existing_tags + remote_tags)),
+        "related_modules": list(payload.get("related_modules") or []),
+        "import_source": "MOSAIC Knowledge Repository",
+        "import_source_id": str(remote.get("source_id") or "").strip(),
+        "import_fingerprint": str(remote.get("fingerprint") or "").strip(),
+    })
+    return payload
+
+
+def _download_mosaic_pdf(pdf_url: str) -> tuple[str, str, bytes]:
+    if not pdf_url:
+        raise ValueError("No PDF download is listed for this resource.")
+    data, mime_type, final_url = _mosaic_repository_request(
+        pdf_url,
+        max_bytes=MOSAIC_IMPORT_MAX_BYTES,
+        timeout=45,
+    )
+    path_name = unquote(Path(urlparse(final_url).path).name).strip()
+    if not path_name:
+        path_name = "mosaic-resource.pdf"
+    if not path_name.lower().endswith(".pdf") and mime_type == "application/pdf":
+        path_name += ".pdf"
+    if mime_type != "application/pdf" and not path_name.lower().endswith(".pdf"):
+        raise ValueError(f"The download is not a PDF ({mime_type}).")
+    return _safe_resource_filename(path_name), "application/pdf", data
+
+
+def _attach_imported_pdfs(user: dict, resource_id: str, remote: dict) -> dict[str, object]:
+    active_files = [row for row in _resource_files_for("library", resource_id) if not row.get("archived")]
+    existing_ids = {str(row.get("resource_id") or "") for row in active_files}
+    existing_pdf_rows = [
+        row for row in active_files
+        if str(row.get("mime_type") or "").casefold() == "application/pdf"
+        or str(row.get("file_name") or "").lower().endswith(".pdf")
+    ]
+    pdf_urls = [str(url).strip() for url in (remote.get("pdf_urls") or []) if str(url).strip()]
+    if not pdf_urls and remote.get("pdf_url"):
+        pdf_urls = [str(remote.get("pdf_url") or "").strip()]
+    pdf_urls = list(dict.fromkeys(pdf_urls))
+    if not pdf_urls:
+        return {"attached": 0, "skipped": 0, "errors": []}
+
+    # If an older/manual record already has a PDF but none of the deterministic
+    # importer IDs, avoid creating a likely duplicate. New importer-created
+    # records have no files yet, while subsequent imports can identify their own
+    # files by stable IDs and add newly-listed PDFs safely.
+    imported_ids = {
+        hashlib.sha256(f"mosaic-import:{resource_id}:{url}".encode("utf-8")).hexdigest()[:32]
+        for url in pdf_urls
+    }
+    if existing_pdf_rows and not (existing_ids & imported_ids):
+        return {"attached": 0, "skipped": len(pdf_urls), "errors": []}
+
+    attached = 0
+    skipped = 0
+    errors: list[str] = []
+    for sort_index, pdf_url in enumerate(pdf_urls, start=1):
+        stable_file_id = hashlib.sha256(f"mosaic-import:{resource_id}:{pdf_url}".encode("utf-8")).hexdigest()[:32]
+        if stable_file_id in existing_ids:
+            skipped += 1
+            continue
+        try:
+            file_name, mime_type, file_data = _download_mosaic_pdf(pdf_url)
+        except Exception as exc:
+            errors.append(f"{pdf_url}: {exc}")
+            continue
+        save_cms_resource_file(
+            stable_file_id,
+            scope_type="library",
+            scope_id=resource_id,
+            resource_kind="PDF",
+            title=str(remote.get("title") or file_name),
+            description="Imported from the MOSAIC Knowledge Repository.",
+            file_name=file_name,
+            mime_type=mime_type,
+            file_data=file_data,
+            sort_order=sort_index * 10,
+            updated_by=user["user_id"],
+        )
+        existing_ids.add(stable_file_id)
+        attached += 1
+    return {"attached": attached, "skipped": skipped, "errors": errors}
+
+
+def _render_mosaic_repository_importer(user: dict, resources: dict[str, dict]) -> None:
+    preview_key = "mosaic-repository-import-preview"
+    with st.expander("↻ Import from the MOSAIC website", expanded=bool(st.session_state.get(preview_key))):
+        st.caption(
+            "Scan the public MOSAIC Knowledge Repository, compare it with this library and create only new items as drafts. Existing records are never overwritten automatically."
+        )
+        fetch_col, source_col = st.columns([1, 2.2], vertical_alignment="center")
+        with fetch_col:
+            if st.button("Check MOSAIC repository", key="studio-mosaic-import-check", type="primary", width="stretch"):
+                try:
+                    _fetch_mosaic_repository_items.clear()
+                    with st.spinner("Reading the MOSAIC repository…"):
+                        st.session_state[preview_key] = _fetch_mosaic_repository_items()
+                except Exception as exc:
+                    st.session_state.pop(preview_key, None)
+                    st.error(f"The repository could not be checked: {exc}")
+        with source_col:
+            st.markdown(
+                f"Source: [{MOSAIC_RESOURCE_REPOSITORY_URL}]({MOSAIC_RESOURCE_REPOSITORY_URL})"
+            )
+
+        preview = st.session_state.get(preview_key)
+        if not preview:
+            return
+        remote_items = list(preview.get("items") or [])
+        classified: list[dict] = []
+        for remote in remote_items:
+            status, match_id = _mosaic_import_state(resources, remote)
+            classified.append({"remote": remote, "status": status, "match_id": match_id})
+        new_items = [item for item in classified if item["status"] == "New"]
+        changed_items = [item for item in classified if item["status"] in {"Source changed", "Needs review"}]
+        existing_items = [item for item in classified if item["status"] == "Already in library"]
+
+        a, b, c, d = st.columns(4)
+        a.metric("Found", int(preview.get("found") or len(remote_items)))
+        b.metric("New", len(new_items))
+        c.metric("Already here", len(existing_items))
+        d.metric("Review", len(changed_items))
+
+        discovery = preview.get("discovery") or {}
+        if discovery:
+            st.caption(
+                "Discovery: "
+                f"{int(discovery.get('repository') or 0)} from repository markup · "
+                f"{int(discovery.get('pagination') or 0)} from page variants · "
+                f"{int(discovery.get('sitemap') or 0)} from sitemap · "
+                f"{int(discovery.get('fallback') or 0)} from current-repository fallback"
+            )
+
+        if preview.get("errors"):
+            with st.expander(f"{len(preview['errors'])} source page(s) could not be read"):
+                for error in preview["errors"]:
+                    st.caption(error)
+
+        table_rows = []
+        for entry in classified:
+            remote = entry["remote"]
+            table_rows.append({
+                "Status": entry["status"],
+                "Title": remote.get("title", ""),
+                "Year": remote.get("year", ""),
+                "Type": remote.get("resource_type", "Resource"),
+                "PDFs": len(remote.get("pdf_urls") or ([remote.get("pdf_url")] if remote.get("pdf_url") else [])),
+            })
+        if table_rows:
+            st.dataframe(table_rows, width="stretch", hide_index=True)
+
+        download_pdfs = st.checkbox(
+            "Download available PDFs into the protected MOSAIC Learn database",
+            value=True,
+            key="studio-mosaic-import-pdfs",
+            help="Files larger than 25 MB are skipped and the source link is still kept.",
+        )
+        if new_items:
+            if st.button(
+                f"Import {len(new_items)} new resource{'s' if len(new_items) != 1 else ''} as drafts",
+                key="studio-mosaic-import-new",
+                type="primary",
+            ):
+                max_sort = max([int(item.get("_cms_sort_order") or 0) for item in resources.values()] or [0])
+                imported = 0
+                pdf_attached = 0
+                pdf_errors: list[str] = []
+                working_resources = dict(resources)
+                for offset, entry in enumerate(new_items, start=1):
+                    remote = entry["remote"]
+                    resource_id = _mosaic_resource_id(str(remote.get("source_id") or "resource"), working_resources)
+                    payload = _mosaic_payload_from_remote(remote)
+                    payload["id"] = resource_id
+                    save_cms_library_resource_draft(
+                        resource_id,
+                        payload,
+                        max_sort + offset * 10,
+                        user["user_id"],
+                    )
+                    working_resources[resource_id] = payload
+                    imported += 1
+                    if download_pdfs:
+                        pdf_result = _attach_imported_pdfs(user, resource_id, remote)
+                        pdf_attached += int(pdf_result.get("attached") or 0)
+                        pdf_errors.extend(
+                            f"{remote.get('title')}: {message}"
+                            for message in (pdf_result.get("errors") or [])
+                        )
+                _clear_content_studio_caches()
+                st.session_state.pop(preview_key, None)
+                message = f"Imported {imported} new MOSAIC resource{'s' if imported != 1 else ''} as drafts."
+                if download_pdfs:
+                    message += f" Attached {pdf_attached} PDF{'s' if pdf_attached != 1 else ''}."
+                if pdf_errors:
+                    message += f" {len(pdf_errors)} PDF download{'s' if len(pdf_errors) != 1 else ''} could not be stored; their source links were kept."
+                _content_studio_flash(message)
+                st.rerun()
+        else:
+            st.success("No new repository items to import.")
+
+        if changed_items:
+            st.markdown("#### Matches and source updates to review")
+            st.caption(
+                "These records either match an older manually-added item or were imported before and changed on the MOSAIC website. Nothing is overwritten until you explicitly apply the website metadata to its draft. Published content stays unchanged until you publish it again."
+            )
+            changed_options = list(range(len(changed_items)))
+            selected_idx = st.selectbox(
+                "Resource with an update",
+                changed_options,
+                format_func=lambda idx: changed_items[idx]["remote"].get("title", "MOSAIC resource"),
+                key="studio-mosaic-update-select",
+            )
+            selected = changed_items[int(selected_idx)]
+            remote = selected["remote"]
+            local = resources[selected["match_id"]]
+            left, right = st.columns(2, gap="large")
+            with left:
+                st.markdown("**Current draft / local record**")
+                st.caption(f"Year: {local.get('year') or '—'}")
+                st.write(local.get("authors") or "No authors recorded")
+                st.write(local.get("description") or "No description recorded")
+            with right:
+                st.markdown("**Current MOSAIC website**")
+                st.caption(f"Year: {remote.get('year') or '—'}")
+                st.write(remote.get("authors") or "No authors listed")
+                st.write(remote.get("description") or "No description listed")
+            if st.button("Apply website metadata to this draft", key="studio-mosaic-apply-update", type="secondary"):
+                resource_id = selected["match_id"]
+                payload = _mosaic_payload_from_remote(remote, existing=local)
+                payload["id"] = resource_id
+                save_cms_library_resource_draft(
+                    resource_id,
+                    payload,
+                    int(local.get("_cms_sort_order") or 0),
+                    user["user_id"],
+                )
+                if download_pdfs:
+                    _attach_imported_pdfs(user, resource_id, remote)
+                _clear_content_studio_caches()
+                st.session_state.pop(preview_key, None)
+                _content_studio_flash("The updated MOSAIC metadata was applied to the draft for review. The published resource was not changed.")
+                st.rerun()
+
 def _normalise_library_resource_payload(resource_id: str, payload: dict | None) -> dict:
     data = copy.deepcopy(payload or {})
     data["id"] = resource_id
@@ -1349,7 +2238,15 @@ def _normalise_library_resource_payload(resource_id: str, payload: dict | None) 
     data["resource_type"] = str(data.get("resource_type") or "Report").strip()
     data["authors"] = str(data.get("authors") or "").strip()
     data["year"] = str(data.get("year") or "").strip()
-    data["source_url"] = str(data.get("source_url") or "").strip()
+    data["publication_date"] = str(data.get("publication_date") or "").strip()
+    data["source_page_url"] = str(data.get("source_page_url") or "").strip()
+    publication_url = str(data.get("publication_url") or data.get("source_url") or "").strip()
+    data["publication_url"] = publication_url
+    # Keep source_url for compatibility with deployments from before the importer.
+    data["source_url"] = publication_url
+    data["import_source"] = str(data.get("import_source") or "").strip()
+    data["import_source_id"] = str(data.get("import_source_id") or "").strip()
+    data["import_fingerprint"] = str(data.get("import_fingerprint") or "").strip()
     tags = data.get("tags") or []
     if isinstance(tags, str):
         tags = [item.strip() for item in re.split(r"[,\n]", tags) if item.strip()]
@@ -2135,8 +3032,6 @@ def render_sidebar(user: dict | None):
             ("tools", "◇  Tools"),
             ("community", "✣  Community"),
         ]
-        if user:
-            items.append(("profile", "○  My profile"))
         for key, label in items:
             button_type = "primary" if route == key else "secondary"
             if st.button(label, key=f"nav-{key}", width="stretch", type=button_type):
@@ -2174,11 +3069,14 @@ def render_sidebar(user: dict | None):
 
         # Keep reference and legal pages together beneath a quiet divider.
         st.markdown("---")
-        reference_items = [
+        reference_items = []
+        if user:
+            reference_items.append(("profile", "○  My profile"))
+        reference_items.extend([
             ("privacy", "Privacy notice"),
             ("glossary", "A–Z  Glossary"),
             ("contact", "✉  Contact"),
-        ]
+        ])
         for key, label in reference_items:
             button_type = "primary" if route == key else "secondary"
             if st.button(label, key=f"nav-{key}", width="stretch", type=button_type):
@@ -2275,10 +3173,10 @@ def page_home(user: dict | None):
             "learning",
         ),
         (
-            "Your trajectory",
-            "↝",
-            "Follow your progress and share it with others.",
-            "learning",
+            "MOSAIC Learn Agent",
+            "✦",
+            "Discuss your project with our agent.",
+            "resources",
             None,
             "empowerment",
         ),
@@ -2296,6 +3194,8 @@ def page_home(user: dict | None):
                 button_label = "Explore learning modules →"
             elif target_type == "learning":
                 button_label = "Open my learning →"
+            elif target_type == "resources":
+                button_label = "Explore the agent →"
             else:
                 button_label = "Open →"
 
@@ -2883,6 +3783,91 @@ def all_tools_zip() -> bytes:
     return _all_tools_zip_cached()
 
 
+def _render_mosaic_learn_agent_placeholder() -> None:
+    """Visual placeholder for the future project-aware MOSAIC Learn Agent."""
+    st.markdown(
+        """
+        <section class="m-agent-shell" aria-label="MOSAIC Learn Agent preview">
+            <div class="m-agent-head">
+                <div class="m-agent-identity">
+                    <div class="m-agent-avatar" aria-hidden="true">M</div>
+                    <div class="m-agent-title"><strong>MOSAIC Learn Agent</strong><span>Project-aware guidance across MOSAIC methods, tools and evidence</span></div>
+                </div>
+                <span class="m-agent-soon">Coming soon</span>
+            </div>
+            <div class="m-agent-message">Hi — I will soon help you connect questions from your own project to relevant MOSAIC learning modules, tools and evidence.</div>
+            <div class="m-agent-compose" aria-disabled="true">
+                <div class="m-agent-placeholder">Ask a question about your project…</div>
+                <div class="m-agent-send" aria-hidden="true">→</div>
+            </div>
+        </section>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def _render_resource_detail(resource_id: str, item: dict) -> None:
+    if st.button("← All resources", key=f"resource-detail-back-{resource_id}"):
+        navigate("resources")
+
+    origin_class = "mosaic" if item.get("origin") == "MOSAIC content" else "external"
+    meta = [str(item.get("resource_type") or "Resource")]
+    if item.get("year"):
+        meta.append(str(item["year"]))
+    if item.get("publication_date") and item.get("publication_date") != item.get("year"):
+        meta.append(str(item["publication_date"]))
+    meta_html = "".join(f"<span>{escape(value)}</span>" for value in meta if value)
+    st.markdown(
+        f"""
+        <section class="m-resource-detail">
+            <div class="m-resource-badges"><span class="m-resource-badge {origin_class}">{escape(item.get('origin') or '')}</span></div>
+            <h1>{escape(item.get('title') or resource_id)}</h1>
+            {f"<p>{escape(item.get('description') or '')}</p>" if item.get('description') else ""}
+            <div class="m-resource-detail-meta">{meta_html}</div>
+        </section>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    detail_left, detail_right = st.columns([1.35, 1], gap="large")
+    with detail_left:
+        if item.get("authors"):
+            st.markdown("### Author / organisation")
+            st.write(item["authors"])
+        module_names = [MODULES[mid]["short_title"] for mid in item.get("related_modules") or [] if mid in MODULES]
+        if module_names:
+            st.markdown("### Used in MOSAIC Learn")
+            st.write(" · ".join(module_names))
+        tags = item.get("tags") or []
+        if tags:
+            st.markdown("### Keywords")
+            st.markdown(" ".join(f"`{tag}`" for tag in tags))
+    with detail_right:
+        publication_url = str(item.get("publication_url") or item.get("source_url") or "").strip()
+        if publication_url:
+            st.link_button("Open publication / external source ↗", publication_url, width="stretch")
+
+    files = [meta for meta in _resource_files_for("library", resource_id) if not meta.get("archived")]
+    if files:
+        st.markdown(
+            "<div class='m-resource-download-shell'><h2>Download resources</h2><p>Download the files stored with this resource.</p></div>",
+            unsafe_allow_html=True,
+        )
+        download_cols = st.columns(min(2, len(files)), gap="medium")
+        for idx, meta in enumerate(files):
+            with download_cols[idx % len(download_cols)]:
+                _render_resource_download(
+                    meta,
+                    key=f"resource-detail-download-{resource_id}-{idx}",
+                    button_type="primary" if idx == 0 else "secondary",
+                    label=f"Download {meta.get('title') or meta.get('file_name')} ↓",
+                )
+    else:
+        st.info("No downloadable file is stored for this resource yet.")
+        if item.get("source_page_url"):
+            st.link_button("Open repository record ↗", item["source_page_url"], width="content")
+
+
 def page_resources(user: dict | None):
     resources = _published_library_resources()
     st.markdown(
@@ -2895,12 +3880,19 @@ def page_resources(user: dict | None):
         """,
         unsafe_allow_html=True,
     )
+
+    selected_id = _query_param_text("resource")
+    if selected_id in resources:
+        _render_resource_detail(selected_id, resources[selected_id])
+        return
+
+    _render_mosaic_learn_agent_placeholder()
+
     if not resources:
         st.info("No resources have been published in the library yet. Administrators can add PDFs and source links from the Content Studio.")
         st.markdown("Browse the wider [MOSAIC Knowledge Repository](https://mosaic-europe.eu/mosaic/mosaic-knowledge-repository) while this library is being populated.")
         return
 
-    selected_id = _query_param_text("resource")
     search_col, origin_col, type_col, module_col = st.columns([2.2, 1, 1, 1.2])
     with search_col:
         query = st.text_input("Search resources", placeholder="Search title, author, keyword or description…", key="resource-library-search").strip()
@@ -2931,13 +3923,9 @@ def page_resources(user: dict | None):
         if module_filter != "All modules" and module_label_to_id.get(module_filter) not in (item.get("related_modules") or []):
             continue
         shown.append((resource_id, item))
-    if selected_id in resources and all(resource_id != selected_id for resource_id, _item in shown):
-        shown.append((selected_id, resources[selected_id]))
-    shown.sort(key=lambda pair: (pair[0] != selected_id, int(pair[1].get("_sort_order") or 0), pair[1].get("title", "").casefold()))
+    shown.sort(key=lambda pair: (int(pair[1].get("_sort_order") or 0), pair[1].get("title", "").casefold()))
 
     st.caption(f"{len(shown)} of {len(resources)} resources")
-    if selected_id in resources:
-        st.info(f"Opened from a learning step: **{resources[selected_id]['title']}** is shown first, even if your current filters would normally hide it.")
     if not shown:
         st.info("No resources match these filters.")
         return
@@ -2951,29 +3939,23 @@ def page_resources(user: dict | None):
             meta_bits = [item.get("resource_type", "Resource")]
             if item.get("year"):
                 meta_bits.append(item["year"])
-            if item.get("authors"):
-                meta_bits.append(item["authors"])
-            tag_html = "".join(f"<span class='m-tool-filter-tag'>{escape(tag)}</span>" for tag in tags[:5])
-            module_html = "".join(f"<span class='m-tool-filter-tag'>{escape(name)}</span>" for name in module_names)
-            url_html = ""
-            if item.get("source_url"):
-                url_html = f"<a href='{escape(item['source_url'])}' target='_blank' rel='noopener noreferrer'>Open source ↗</a>"
+            tag_html = "".join(f"<span class='m-tool-filter-tag'>{escape(tag)}</span>" for tag in tags[:4])
+            module_html = "".join(f"<span class='m-tool-filter-tag'>{escape(name)}</span>" for name in module_names[:2])
+            author_html = f"<div class='m-resource-card-author'>{escape(item.get('authors') or '')}</div>" if item.get("authors") else ""
+            detail_url = f"?page=resources&resource={quote(resource_id)}"
             st.markdown(
                 f"""
                 <div class='m-resource-library-card'>
                     <div class='m-resource-badges'><span class='m-resource-badge {origin_class}'>{escape(item.get('origin') or '')}</span><span class='m-resource-badge'>{escape(' · '.join(meta_bits))}</span></div>
                     <h3>{escape(item['title'])}</h3>
+                    {author_html}
                     <p>{escape(item.get('description') or '')}</p>
                     <div class='m-tool-filter-tags'>{module_html}{tag_html}</div>
-                    {url_html}
+                    <div class='m-resource-card-action'><a href='{escape(detail_url)}'>Download resources →</a></div>
                 </div>
                 """,
                 unsafe_allow_html=True,
             )
-            files = [meta for meta in _resource_files_for("library", resource_id) if not meta.get("archived")]
-            for fidx, meta in enumerate(files):
-                _render_resource_download(meta, key=f"library-resource-{resource_id}-{fidx}", button_type="secondary")
-
 
 def _tool_matches_filters(tool: dict, *, query: str, module_filter: str, format_filter: str, keyword_filter: str) -> bool:
     links = _tool_lesson_links(tool)
@@ -4100,8 +5082,11 @@ def page_community(user):
 
     post_count = len(posts)
     reflection_label = "reflection" if post_count == 1 else "reflections"
-    mycelium_member_count = len(mycelium_state.get("members", [])) if mycelium_state.get("is_member") else 0
-    mycelium_request_count = len(mycelium_state.get("incoming", [])) if mycelium_state.get("is_member") else 0
+    mycelium_is_member = bool(mycelium_state.get("is_member"))
+    mycelium_member_count = len(mycelium_state.get("members", [])) if mycelium_is_member else 0
+    mycelium_request_count = len(mycelium_state.get("incoming", [])) if mycelium_is_member else 0
+    mycelium_member_value = str(mycelium_member_count) if mycelium_is_member else "—"
+    mycelium_member_label = "Mycelium members" if mycelium_is_member else "Mycelium network"
 
     st.markdown(
         f"""
@@ -4109,14 +5094,14 @@ def page_community(user):
             <div class="m-community-hero-grid">
                 <div class="m-community-hero-copy">
                     <div class="m-kicker">Community · the MOSAIC mycelium</div>
-                    <h1>Turn individual learning into shared knowledge</h1>
-                    <p>Read reflections from other learners, compare contexts, add your own experience, and grow your network across the MOSAIC community.</p>
+                    <h1>Learn with other people working on land-use change</h1>
+                    <p>Join the discussion, find people in the Mycelium, or check updates from your community activity.</p>
                 </div>
                 <div class="m-community-snapshot">
                     <div class="label">Community at a glance</div>
                     <div class="m-community-snapshot-grid">
                         <div class="m-community-snapshot-item"><strong>{post_count}</strong><span>{reflection_label}</span></div>
-                        <div class="m-community-snapshot-item"><strong>{mycelium_member_count}</strong><span>Mycelium members</span></div>
+                        <div class="m-community-snapshot-item"><strong>{mycelium_member_value}</strong><span>{mycelium_member_label}</span></div>
                         <div class="m-community-snapshot-item"><strong>{unread_on_entry}</strong><span>unread updates</span></div>
                     </div>
                 </div>
@@ -4131,66 +5116,30 @@ def page_community(user):
         st.session_state["community-section"] = "explore"
     section = st.session_state.get("community-section", "explore")
 
-    st.markdown(
-        """
-        <div class="m-community-section-lead">
-            <div>
-                <div class="m-kicker">Choose a space</div>
-                <h2>Community hub</h2>
-                <p>Move between the discussion, the learner network and your private activity updates.</p>
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    nav_cards = [
-        (
-            "explore",
-            "◎",
-            "Comments & reflections",
-            "Read what others are trying, compare contexts, and join the discussion.",
-            f"{post_count} {reflection_label}",
-        ),
-        (
-            "mycelium",
-            "✣",
-            "Our mycelium",
-            "Explore the learner network, make connections, and respond to invitations.",
-            (
-                f"{mycelium_member_count} members · {mycelium_request_count} requests"
-                if mycelium_state.get("is_member")
-                else "Optional learner network"
-            ),
-        ),
-        (
-            "notifications",
-            "🔔",
-            "Notifications",
-            "Check replies, reactions, and private Mycelium updates that need your attention.",
-            f"{unread_on_entry} unread" if unread_on_entry else "All caught up",
-        ),
-    ]
-    nav_cols = st.columns(3, gap="large")
-    for nav_col, (target_section, icon, title, description, meta) in zip(nav_cols, nav_cards):
-        with nav_col:
-            active = section == target_section
-            state_label = "OPEN" if active else "VIEW"
-            button_label = (
-                f"{icon}   {state_label}\n\n"
-                f"**{title}**\n\n"
-                f"{description}\n\n"
-                f"• {meta}"
-            )
-            if st.button(
-                button_label,
-                key=f"community-nav-button-{target_section}",
-                type="primary" if active else "secondary",
-                width="stretch",
-                help=f"Open {title}",
-            ):
-                st.session_state["community-section"] = target_section
-                st.rerun()
+    section_to_label = {
+        "explore": "Discussion",
+        "mycelium": "Our mycelium",
+        "notifications": "Notifications",
+    }
+    label_to_section = {label: key for key, label in section_to_label.items()}
+    with st.container(key="community_navigation"):
+        selected_space = st.segmented_control(
+            "Community space",
+            list(label_to_section),
+            default=section_to_label[section],
+            key="community-space-picker",
+            label_visibility="collapsed",
+            width="stretch",
+        ) or section_to_label[section]
+        section = label_to_section[selected_space]
+        st.session_state["community-section"] = section
+        status_bits = [f"{post_count} {reflection_label}"]
+        if mycelium_is_member:
+            status_bits.append(f"{mycelium_request_count} connection request{'s' if mycelium_request_count != 1 else ''}")
+        else:
+            status_bits.append("Mycelium is optional")
+        status_bits.append(f"{unread_on_entry} unread update{'s' if unread_on_entry != 1 else ''}")
+        st.caption("  ·  ".join(status_bits))
 
     def render_share_perspective() -> None:
         available_ids = [
@@ -4208,46 +5157,39 @@ def page_community(user):
         )
         default_index = available_ids.index(default_id)
 
-        st.markdown(
-            """
-            <div class="m-community-share-shell">
-                <div class="m-kicker">Add to the conversation</div>
-                <h3>Share your perspective</h3>
-                <p>After reading and responding to others, add your own short reflection, field observation or question to the community.</p>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-        module_id = st.selectbox(
-            "Related module",
-            available_ids,
-            index=default_index,
-            format_func=lambda mid: MODULES[mid]["short_title"],
-            key="community-post-module",
-        )
-        topic_options = [None] + [
-            topic["id"] for topic in learning_topics(MODULES[module_id])
-        ]
-        topic_id = st.selectbox(
-            "Related lesson (optional)",
-            topic_options,
-            format_func=lambda tid: (
-                "Whole module / general"
-                if tid is None
-                else topic_by_id(module_id, tid)["title"]
-            ),
-            key="community-post-topic",
-        )
-        with st.form("community-post-form", border=True):
-            perspective_text = st.text_area(
-                "What would you like to share?",
-                placeholder="A result you tried, something that surprised you, a question for others, or a short field reflection...",
-                height=135,
-                max_chars=1200,
-            )
-            st.caption("Visible to other learners in the MOSAIC community.")
-            submitted = st.form_submit_button("Publish", type="primary")
+        with st.expander("＋ Share a perspective", expanded=False):
+            st.caption("Add a short reflection, field observation or question. It will be visible to other signed-in MOSAIC learners.")
+            context_left, context_right = st.columns(2, gap="medium")
+            with context_left:
+                module_id = st.selectbox(
+                    "Related module",
+                    available_ids,
+                    index=default_index,
+                    format_func=lambda mid: MODULES[mid]["short_title"],
+                    key="community-post-module",
+                )
+            topic_options = [None] + [
+                topic["id"] for topic in learning_topics(MODULES[module_id])
+            ]
+            with context_right:
+                topic_id = st.selectbox(
+                    "Related lesson (optional)",
+                    topic_options,
+                    format_func=lambda tid: (
+                        "Whole module / general"
+                        if tid is None
+                        else topic_by_id(module_id, tid)["title"]
+                    ),
+                    key="community-post-topic",
+                )
+            with st.form("community-post-form", border=False):
+                perspective_text = st.text_area(
+                    "What would you like to share?",
+                    placeholder="A result you tried, something that surprised you, a question for others, or a short field reflection...",
+                    height=120,
+                    max_chars=1200,
+                )
+                submitted = st.form_submit_button("Publish to community", type="primary")
         if submitted:
             cleaned = perspective_text.strip()
             if not cleaned:
@@ -4274,16 +5216,17 @@ def page_community(user):
     if section == "explore":
         st.markdown(
             """
-            <div class="m-community-section-lead">
+            <div class="m-community-section-lead compact">
                 <div>
-                    <div class="m-kicker">Comments & reflections</div>
-                    <h2>See what the community is learning</h2>
-                    <p>React, ask a follow-up question, compare experiences, or add a practical suggestion to another learner's reflection.</p>
+                    <div class="m-kicker">Discussion</div>
+                    <h2>Reflections from the community</h2>
+                    <p>Compare contexts, react to an idea or open the comments when you want to continue the conversation.</p>
                 </div>
             </div>
             """,
             unsafe_allow_html=True,
         )
+        render_share_perspective()
         if not posts:
             st.info(
                 "No reflections have been shared yet. Start the conversation with "
@@ -4390,8 +5333,6 @@ def page_community(user):
                             )
                             _clear_community_interaction_caches()
                             st.rerun()
-
-        render_share_perspective()
 
     elif section == "mycelium":
         st.markdown(
@@ -6205,8 +7146,9 @@ def _render_content_studio_library_resources(user: dict, snapshot: dict[str, dic
         st.info("Only administrators can manage the Resources library.")
         return
     st.markdown("### Resources")
-    st.caption("Publish searchable source records for papers, reports, websites and PDFs. Mark each item as MOSAIC content or external content, then link it to lessons from Modules & lessons.")
+    st.caption("Publish searchable source records for papers, reports, websites and PDFs. Import MOSAIC repository entries as drafts or add resources manually, then link them to learning modules.")
     resources = _admin_library_resource_snapshot()
+    _render_mosaic_repository_importer(user, resources)
     resource_ids = list(resources)
     module_ids = [mid for mid, module in snapshot.items() if not module.get("_cms_archived")]
     if resource_ids:
@@ -6228,7 +7170,20 @@ def _render_content_studio_library_resources(user: dict, snapshot: dict[str, dic
             with c:
                 year = st.text_input("Year", value=item.get("year", ""), key=f"studio-library-year-{resource_id}")
             authors = st.text_input("Author(s) / organisation", value=item.get("authors", ""), key=f"studio-library-authors-{resource_id}")
-            source_url = st.text_input("Paper / source URL", value=item.get("source_url", ""), placeholder="https://…", key=f"studio-library-url-{resource_id}")
+            source_page_url = st.text_input(
+                "Source page URL",
+                value=item.get("source_page_url", ""),
+                placeholder="https://mosaic-europe.eu/mosaic/resource/…",
+                help="For imported MOSAIC records this is the original page in the MOSAIC Knowledge Repository.",
+                key=f"studio-library-source-page-{resource_id}",
+            )
+            publication_url = st.text_input(
+                "Publication / external URL",
+                value=item.get("publication_url") or item.get("source_url", ""),
+                placeholder="https://doi.org/… or https://zenodo.org/…",
+                help="Optional link to the publication, DOI, Zenodo record or another authoritative external source.",
+                key=f"studio-library-publication-url-{resource_id}",
+            )
             description = st.text_area("Description", value=item.get("description", ""), height=100, key=f"studio-library-description-{resource_id}")
             tags_text = st.text_input("Keywords / tags", value=", ".join(item.get("tags") or []), key=f"studio-library-tags-{resource_id}")
             related_modules = st.multiselect(
@@ -6240,9 +7195,22 @@ def _render_content_studio_library_resources(user: dict, snapshot: dict[str, dic
             )
             sort_order = st.number_input("Sort order", min_value=0, max_value=10000, value=int(item.get("_cms_sort_order") or 0), step=10, key=f"studio-library-sort-{resource_id}")
             payload = {
-                "id": resource_id, "title": title.strip(), "origin": origin, "resource_type": resource_type.strip() or "Resource",
-                "authors": authors.strip(), "year": year.strip(), "source_url": source_url.strip(), "description": description.strip(),
-                "tags": [part.strip() for part in tags_text.split(",") if part.strip()], "related_modules": related_modules,
+                "id": resource_id,
+                "title": title.strip(),
+                "origin": origin,
+                "resource_type": resource_type.strip() or "Resource",
+                "authors": authors.strip(),
+                "year": year.strip(),
+                "publication_date": item.get("publication_date", ""),
+                "source_page_url": source_page_url.strip(),
+                "publication_url": publication_url.strip(),
+                "source_url": publication_url.strip(),
+                "description": description.strip(),
+                "tags": [part.strip() for part in tags_text.split(",") if part.strip()],
+                "related_modules": related_modules,
+                "import_source": item.get("import_source", ""),
+                "import_source_id": item.get("import_source_id", ""),
+                "import_fingerprint": item.get("import_fingerprint", ""),
             }
             save_col, publish_col = st.columns(2)
             with save_col:
@@ -6299,8 +7267,22 @@ def _render_content_studio_library_resources(user: dict, snapshot: dict[str, dic
                 st.error("Add a resource title.")
             else:
                 payload = {
-                    "id": new_id, "title": new_title.strip(), "origin": new_origin, "resource_type": new_type.strip() or "Resource",
-                    "authors": "", "year": "", "source_url": "", "description": "", "tags": [], "related_modules": [],
+                    "id": new_id,
+                    "title": new_title.strip(),
+                    "origin": new_origin,
+                    "resource_type": new_type.strip() or "Resource",
+                    "authors": "",
+                    "year": "",
+                    "publication_date": "",
+                    "source_page_url": "",
+                    "publication_url": "",
+                    "source_url": "",
+                    "description": "",
+                    "tags": [],
+                    "related_modules": [],
+                    "import_source": "",
+                    "import_source_id": "",
+                    "import_fingerprint": "",
                 }
                 save_cms_library_resource_draft(new_id, payload, (len(resources) + 1) * 10, user["user_id"])
                 _clear_content_studio_caches(); _content_studio_flash("Resource draft created. Add its source link and optional PDF before publishing."); st.rerun()
