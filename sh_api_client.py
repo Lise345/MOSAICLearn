@@ -2,6 +2,9 @@
 from __future__ import annotations
 import re
 import time
+import threading
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from urllib.parse import urlparse, quote
 import requests
 
@@ -16,15 +19,60 @@ def doc_id_from_url_or_id(value: str) -> str:
     raise ValueError("Enter a Superhuman Docs document URL containing '_d...' or the document ID")
 
 
+# Coda has a particularly strict write/content-write allowance. Export uses
+# POST even though the exported content is read-only. Pace export requests
+# across threads, imports and preview calls within this Python process.
+_EXPORT_POST_MIN_INTERVAL_SECONDS = 3.7
+_POST_LOCK = threading.Lock()
+_NEXT_POST_AT = 0.0
+
+
+def _pace_export_post(url: str) -> None:
+    global _NEXT_POST_AT
+    if not url.rstrip("/").endswith("/export"):
+        return
+    with _POST_LOCK:
+        now = time.monotonic()
+        wait = max(0.0, _NEXT_POST_AT - now)
+        if wait:
+            time.sleep(wait)
+        _NEXT_POST_AT = time.monotonic() + _EXPORT_POST_MIN_INTERVAL_SECONDS
+
+
+def _retry_after_seconds(value: str | None) -> float | None:
+    if not value:
+        return None
+    try:
+        return max(0.0, float(value))
+    except (ValueError, TypeError):
+        try:
+            delta = (parsedate_to_datetime(value) - datetime.now(timezone.utc)).total_seconds()
+            return max(0.0, delta)
+        except (ValueError, TypeError, OverflowError):
+            return None
+
+
 def _request(method: str, url: str, token: str, **kwargs) -> requests.Response:
-    response = requests.request(method, url, headers={"Authorization": f"Bearer {token}",
-                                 "Accept": "application/json"}, timeout=25, **kwargs)
-    if not response.ok:
-        msg = {401:"Token rejected (401)",403:"Permission denied for this document (403)",
-               404:"Document or page not found (404)",429:"API rate limit (429)"}.get(response.status_code,
-                      f"HTTP {response.status_code}")
+    # Retry only transient 429 / 5xx responses. Do not retry authentication,
+    # permission errors or invalid document IDs.
+    for attempt in range(5):
+        if method.upper() == "POST":
+            _pace_export_post(url)
+        response = requests.request(method, url, headers={
+            "Authorization": f"Bearer {token}", "Accept": "application/json",
+        }, timeout=25, **kwargs)
+        if response.ok:
+            return response
+        if (response.status_code == 429 or response.status_code in {500, 502, 503, 504}) and attempt < 4:
+            retry_after = _retry_after_seconds(response.headers.get("Retry-After"))
+            backoff = min(60.0, 2.0 * (2 ** attempt))
+            time.sleep(min(90.0, retry_after if retry_after is not None else backoff))
+            continue
+        msg = {401: "Token rejected (401)", 403: "Permission denied for this document (403)",
+               404: "Document or page not found (404)", 429: "API rate limit (429) even after retries"}.get(
+                   response.status_code, f"HTTP {response.status_code}")
         raise RuntimeError(msg + ": " + response.text[:350])
-    return response
+    raise RuntimeError("API request failed after retry budget")
 
 
 def list_pages(doc_id: str, token: str) -> list[dict]:

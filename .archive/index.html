@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+:root{
+  --text:#3c3c3b;--muted:#666663;--line:#deded9;--green:#156950;--blue:#0d4f9e;
+  --cyan:#88cdd3;--lime:#a2ab20;--wine:#9c2438;--soft:#f6f6f4;--paper:#fff;
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:Poppins,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--text);background:transparent}
+#app{width:100%;padding:0}
+.toolbar{display:flex;gap:.5rem;align-items:center;justify-content:space-between;flex-wrap:wrap;margin:0 0 .55rem}
+.legend{display:flex;gap:.8rem;align-items:center;flex-wrap:wrap;color:var(--muted);font-size:12px}
+.legend span{display:inline-flex;gap:.35rem;align-items:center}
+.legend i{display:inline-block;width:22px;height:0;border-top:2px solid #9da6a0}
+.legend i.pending{border-top-style:dashed;border-top-color:var(--wine)}
+.help{font-size:12px;color:var(--muted)}
+.viewport{position:relative;width:100%;height:520px;overflow:hidden;border:1px solid var(--line);border-radius:18px;background:linear-gradient(145deg,#fff,#f8faf8);touch-action:none;user-select:none}
+.viewport:focus{outline:3px solid rgba(13,79,158,.22);outline-offset:2px}
+.scene{position:absolute;left:0;top:0;transform-origin:0 0;width:1200px;height:720px}
+svg.edges{position:absolute;inset:0;width:1200px;height:720px;overflow:visible;pointer-events:none}
+.edge{stroke:#a9b0ac;stroke-width:2;opacity:.78;vector-effect:non-scaling-stroke}
+.edge.me{stroke:var(--green);stroke-width:3}
+.edge.pending{stroke:var(--wine);stroke-dasharray:7 7;stroke-width:2.2}
+.edge.drag{stroke:var(--blue);stroke-dasharray:5 5;stroke-width:2.2}
+.node{position:absolute;width:150px;min-height:72px;padding:10px 12px 10px 46px;border:1px solid #d4d8d5;border-radius:16px;background:#fff;box-shadow:0 2px 8px rgba(40,50,45,.08);cursor:grab;transform:translate(-50%,-50%);touch-action:none}
+.node:active{cursor:grabbing}
+.node.current{border:2px solid var(--green);background:#f2f8f5}
+.node.blocked{opacity:.82}
+.avatar{position:absolute;left:10px;top:12px;width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:#edf5f2;color:var(--green);font-weight:700;font-size:12px}
+.name{font-weight:700;font-size:14px;line-height:1.25;overflow-wrap:anywhere}
+.meta{margin-top:3px;color:var(--muted);font-size:11px;line-height:1.3;overflow-wrap:anywhere}
+.handle{position:absolute;right:-9px;top:50%;transform:translateY(-50%);width:22px;height:22px;border-radius:50%;border:3px solid #fff;background:var(--blue);box-shadow:0 0 0 1px rgba(13,79,158,.25);cursor:crosshair}
+.handle::after{content:"+";position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:13px;line-height:1}
+.node.blocked .handle{display:none}
+.zoom-controls{position:absolute;right:10px;bottom:10px;display:flex;gap:6px;z-index:5}
+.zoom-controls button{width:40px;height:40px;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--text);font-size:20px;cursor:pointer}
+.zoom-controls button:focus{outline:3px solid rgba(13,79,158,.22)}
+.empty{padding:1rem;color:var(--muted);font-size:14px}
+.modal-backdrop{position:absolute;inset:0;background:rgba(30,36,33,.35);display:none;align-items:center;justify-content:center;padding:16px;z-index:20}
+.modal-backdrop.open{display:flex}
+.modal{width:min(420px,100%);border-radius:16px;background:#fff;border:1px solid var(--line);padding:16px;box-shadow:0 14px 40px rgba(30,35,32,.18)}
+.modal h3{margin:.1rem 0 .35rem;font-size:18px}
+.modal p{margin:.2rem 0 .8rem;color:var(--muted);font-size:13px;line-height:1.5}
+.check{display:flex;gap:.55rem;align-items:flex-start;margin:.8rem 0 1rem;font-size:13px;line-height:1.45}
+.check input{width:18px;height:18px;margin-top:1px}
+.actions{display:flex;gap:.55rem;justify-content:flex-end;flex-wrap:wrap}
+.actions button{min-height:40px;padding:.55rem .85rem;border-radius:10px;border:1px solid var(--line);background:#fff;color:var(--text);font-weight:600;cursor:pointer}
+.actions button.primary{border-color:var(--green);background:var(--green);color:#fff}
+.actions button:focus{outline:3px solid rgba(13,79,158,.22)}
+.status{min-height:20px;margin-top:.4rem;font-size:12px;color:var(--muted)}
+@media(max-width:620px){
+  .viewport{height:430px}
+  .node{width:126px;min-height:66px;padding:9px 10px 9px 40px;border-radius:14px}
+  .avatar{left:8px;top:10px;width:25px;height:25px}
+  .name{font-size:13px}.meta{font-size:10px}
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="toolbar">
+    <div class="legend" aria-label="Network legend">
+      <span><i></i> connection</span><span><i class="pending"></i> your pending request</span>
+    </div>
+    <div class="help">Drag cards to rearrange · drag the + handle to another learner · wheel or buttons to zoom</div>
+  </div>
+  <div id="viewport" class="viewport" tabindex="0" aria-label="Interactive Mycelium network">
+    <div id="scene" class="scene">
+      <svg id="edges" class="edges" viewBox="0 0 1200 720" preserveAspectRatio="none" aria-hidden="true"></svg>
+      <div id="nodes"></div>
+    </div>
+    <div class="zoom-controls" aria-label="Zoom controls">
+      <button id="zoomOut" type="button" aria-label="Zoom out">−</button>
+      <button id="reset" type="button" aria-label="Reset view">⌂</button>
+      <button id="zoomIn" type="button" aria-label="Zoom in">+</button>
+    </div>
+    <div id="modalBackdrop" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      <div class="modal">
+        <h3 id="modalTitle">Send connection request</h3>
+        <p id="modalCopy"></p>
+        <label class="check"><input id="shareEmail" type="checkbox"><span>Share my email address with this learner as part of the request.</span></label>
+        <div class="actions">
+          <button id="cancelRequest" type="button">Cancel</button>
+          <button id="sendRequest" class="primary" type="button">Send request</button>
+        </div>
+        <div id="status" class="status" aria-live="polite"></div>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+(() => {
+  const READY="streamlit:componentReady";
+  const RENDER="streamlit:render";
+  const SET_VALUE="streamlit:setComponentValue";
+  const SET_HEIGHT="streamlit:setFrameHeight";
+  const send=(type,data={})=>window.parent.postMessage(Object.assign({isStreamlitMessage:true,type},data),"*");
+  const setValue=(value)=>send(SET_VALUE,{value,dataType:"json"});
+  const setHeight=()=>send(SET_HEIGHT,{height:document.documentElement.scrollHeight});
+
+  const viewport=document.getElementById("viewport");
+  const scene=document.getElementById("scene");
+  const nodesLayer=document.getElementById("nodes");
+  const edgesSvg=document.getElementById("edges");
+  const modalBackdrop=document.getElementById("modalBackdrop");
+  const modalCopy=document.getElementById("modalCopy");
+  const shareEmail=document.getElementById("shareEmail");
+  const sendRequest=document.getElementById("sendRequest");
+  const cancelRequest=document.getElementById("cancelRequest");
+  const status=document.getElementById("status");
+
+  let props={members:[],connections:[],pending:[],current_user_id:"",blocked_user_ids:[]};
+  let positions=new Map();
+  let nodeEls=new Map();
+  let scale=1, panX=0, panY=0;
+  let draggingNode=null, draggingLink=null, panning=null, pinch=null, selectedTarget=null;
+
+  function initials(name){
+    return String(name||"?").split(/\s+/).filter(Boolean).slice(0,2).map(s=>s[0].toUpperCase()).join("")||"?";
+  }
+  function clamp(v,min,max){return Math.max(min,Math.min(max,v));}
+  function memberById(id){return (props.members||[]).find(m=>String(m.user_id)===String(id));}
+  function clientToScene(clientX,clientY){
+    const r=viewport.getBoundingClientRect();
+    return {x:(clientX-r.left-panX)/scale,y:(clientY-r.top-panY)/scale};
+  }
+  function applyTransform(){
+    scene.style.transform=`translate(${panX}px,${panY}px) scale(${scale})`;
+    nodeEls.forEach(el=>{
+      const name=el.querySelector(".name");
+      const meta=el.querySelector(".meta");
+      const inv=1/scale;
+      name.style.fontSize=`${Math.max(13,14*inv)}px`;
+      meta.style.fontSize=`${Math.max(10.5,11*inv)}px`;
+    });
+    drawEdges();
+  }
+  function defaultPositions(){
+    const members=props.members||[];
+    const w=1200,h=720,cx=w/2,cy=h/2;
+    const current=members.findIndex(m=>String(m.user_id)===String(props.current_user_id));
+    members.forEach((m,i)=>{
+      if(positions.has(String(m.user_id))) return;
+      if(i===current){positions.set(String(m.user_id),{x:cx,y:cy});return;}
+      const ringIndex=i-(current>=0 && i>current?1:0);
+      const count=Math.max(1,members.length-1);
+      const angle=(Math.PI*2*ringIndex/count)-Math.PI/2;
+      const radius=Math.min(270,145+count*9);
+      positions.set(String(m.user_id),{x:cx+Math.cos(angle)*radius,y:cy+Math.sin(angle)*radius});
+    });
+  }
+  function fitView(){
+    defaultPositions();
+    if(!positions.size){scale=1;panX=0;panY=0;applyTransform();return;}
+    const vals=[...positions.values()];
+    const minX=Math.min(...vals.map(p=>p.x))-100,maxX=Math.max(...vals.map(p=>p.x))+100;
+    const minY=Math.min(...vals.map(p=>p.y))-80,maxY=Math.max(...vals.map(p=>p.y))+80;
+    const r=viewport.getBoundingClientRect();
+    const sx=(r.width-32)/Math.max(1,maxX-minX), sy=(r.height-32)/Math.max(1,maxY-minY);
+    scale=clamp(Math.min(sx,sy,1.12),.42,1.12);
+    panX=(r.width-(minX+maxX)*scale)/2;
+    panY=(r.height-(minY+maxY)*scale)/2;
+    applyTransform();
+  }
+  function line(x1,y1,x2,y2,cls){
+    const l=document.createElementNS("http://www.w3.org/2000/svg","line");
+    l.setAttribute("x1",x1);l.setAttribute("y1",y1);l.setAttribute("x2",x2);l.setAttribute("y2",y2);l.setAttribute("class",cls);
+    edgesSvg.appendChild(l);
+  }
+  function drawEdges(){
+    edgesSvg.innerHTML="";
+    for(const e of (props.connections||[])){
+      const a=positions.get(String(e.source)),b=positions.get(String(e.target));
+      if(!a||!b) continue;
+      const mine=String(e.source)===String(props.current_user_id)||String(e.target)===String(props.current_user_id);
+      line(a.x,a.y,b.x,b.y,`edge${mine?" me":""}`);
+    }
+    for(const e of (props.pending||[])){
+      const a=positions.get(String(e.source)),b=positions.get(String(e.target));
+      if(a&&b) line(a.x,a.y,b.x,b.y,"edge pending");
+    }
+    if(draggingLink){
+      const a=positions.get(String(props.current_user_id));
+      if(a) line(a.x,a.y,draggingLink.x,draggingLink.y,"edge drag");
+    }
+  }
+  function openModal(targetId){
+    const target=memberById(targetId); if(!target) return;
+    selectedTarget=String(targetId); shareEmail.checked=false; status.textContent="";
+    modalCopy.textContent=`Invite ${target.name||"this learner"} to connect in the MOSAIC Mycelium?`;
+    modalBackdrop.classList.add("open"); sendRequest.focus();
+  }
+  function closeModal(){modalBackdrop.classList.remove("open");selectedTarget=null;status.textContent="";}
+  function renderNodes(){
+    nodesLayer.innerHTML="";nodeEls.clear();defaultPositions();
+    const blocked=new Set((props.blocked_user_ids||[]).map(String));
+    for(const m of (props.members||[])){
+      const id=String(m.user_id); const pos=positions.get(id); if(!pos) continue;
+      const el=document.createElement("div");
+      el.className=`node${id===String(props.current_user_id)?" current":""}${blocked.has(id)&&id!==String(props.current_user_id)?" blocked":""}`;
+      el.dataset.userId=id; el.style.left=`${pos.x}px`;el.style.top=`${pos.y}px`;
+      const meta=[m.organisation,m.country].filter(Boolean).join(" · ");
+      el.innerHTML=`<div class="avatar"></div><div class="name"></div><div class="meta"></div>`;
+      el.querySelector(".avatar").textContent=initials(m.name);
+      el.querySelector(".name").textContent=m.name||"Learner";
+      el.querySelector(".meta").textContent=meta||"MOSAIC learner";
+      if(id===String(props.current_user_id)){
+        const handle=document.createElement("div");handle.className="handle";handle.setAttribute("role","button");handle.setAttribute("aria-label","Drag to connect with another learner");handle.tabIndex=0;
+        handle.addEventListener("pointerdown",ev=>{ev.stopPropagation();handle.setPointerCapture(ev.pointerId);const p=clientToScene(ev.clientX,ev.clientY);draggingLink={pointerId:ev.pointerId,x:p.x,y:p.y};drawEdges();});
+        handle.addEventListener("pointermove",ev=>{if(!draggingLink||draggingLink.pointerId!==ev.pointerId)return;const p=clientToScene(ev.clientX,ev.clientY);draggingLink.x=p.x;draggingLink.y=p.y;drawEdges();});
+        handle.addEventListener("pointerup",ev=>{
+          if(!draggingLink||draggingLink.pointerId!==ev.pointerId)return;
+          const candidate=document.elementFromPoint(ev.clientX,ev.clientY)?.closest?.(".node");
+          draggingLink=null;drawEdges();
+          if(candidate&&candidate.dataset.userId&&candidate.dataset.userId!==String(props.current_user_id)&&!blocked.has(candidate.dataset.userId)) openModal(candidate.dataset.userId);
+        });
+        el.appendChild(handle);
+      }
+      el.addEventListener("pointerdown",ev=>{
+        if(ev.target.closest(".handle")) return;
+        el.setPointerCapture(ev.pointerId);const p=clientToScene(ev.clientX,ev.clientY);const cur=positions.get(id);
+        draggingNode={pointerId:ev.pointerId,id,dx:p.x-cur.x,dy:p.y-cur.y};
+      });
+      el.addEventListener("pointermove",ev=>{
+        if(!draggingNode||draggingNode.pointerId!==ev.pointerId||draggingNode.id!==id)return;
+        const p=clientToScene(ev.clientX,ev.clientY);const next={x:p.x-draggingNode.dx,y:p.y-draggingNode.dy};positions.set(id,next);el.style.left=`${next.x}px`;el.style.top=`${next.y}px`;drawEdges();
+      });
+      el.addEventListener("pointerup",ev=>{if(draggingNode?.pointerId===ev.pointerId&&draggingNode.id===id)draggingNode=null;});
+      nodesLayer.appendChild(el);nodeEls.set(id,el);
+    }
+    drawEdges();applyTransform();
+  }
+  function zoomAt(factor,cx,cy){
+    const r=viewport.getBoundingClientRect();const x=cx-r.left,y=cy-r.top;
+    const before={x:(x-panX)/scale,y:(y-panY)/scale};const next=clamp(scale*factor,.38,2.1);
+    panX=x-before.x*next;panY=y-before.y*next;scale=next;applyTransform();
+  }
+  viewport.addEventListener("wheel",ev=>{ev.preventDefault();zoomAt(ev.deltaY<0?1.1:.91,ev.clientX,ev.clientY);},{passive:false});
+  viewport.addEventListener("pointerdown",ev=>{
+    if(ev.target.closest(".node")||ev.target.closest("button")||ev.target.closest(".modal")) return;
+    viewport.setPointerCapture(ev.pointerId);panning={pointerId:ev.pointerId,x:ev.clientX,y:ev.clientY,startX:panX,startY:panY};
+  });
+  viewport.addEventListener("pointermove",ev=>{if(!panning||panning.pointerId!==ev.pointerId)return;panX=panning.startX+(ev.clientX-panning.x);panY=panning.startY+(ev.clientY-panning.y);applyTransform();});
+  viewport.addEventListener("pointerup",ev=>{if(panning?.pointerId===ev.pointerId)panning=null;});
+  document.getElementById("zoomIn").addEventListener("click",()=>{const r=viewport.getBoundingClientRect();zoomAt(1.15,r.left+r.width/2,r.top+r.height/2);});
+  document.getElementById("zoomOut").addEventListener("click",()=>{const r=viewport.getBoundingClientRect();zoomAt(.87,r.left+r.width/2,r.top+r.height/2);});
+  document.getElementById("reset").addEventListener("click",fitView);
+  cancelRequest.addEventListener("click",closeModal);
+  modalBackdrop.addEventListener("click",ev=>{if(ev.target===modalBackdrop)closeModal();});
+  sendRequest.addEventListener("click",()=>{
+    if(!selectedTarget)return;
+    sendRequest.disabled=true;status.textContent="Sending request…";
+    setValue({type:"request",target_user_id:selectedTarget,share_email:shareEmail.checked,nonce:`${Date.now()}-${Math.random().toString(16).slice(2)}`});
+    window.setTimeout(()=>{sendRequest.disabled=false;closeModal();},180);
+  });
+  window.addEventListener("keydown",ev=>{if(ev.key==="Escape"&&modalBackdrop.classList.contains("open"))closeModal();});
+  window.addEventListener("resize",()=>{window.setTimeout(()=>{fitView();setHeight();},40);});
+  window.addEventListener("message",event=>{
+    if(event.data?.type!==RENDER)return;
+    props=Object.assign({members:[],connections:[],pending:[],current_user_id:"",blocked_user_ids:[]},event.data.args||{});
+    const valid=new Set((props.members||[]).map(m=>String(m.user_id)));
+    [...positions.keys()].forEach(id=>{if(!valid.has(id))positions.delete(id);});
+    renderNodes();window.setTimeout(()=>{fitView();setHeight();},0);
+  });
+  send(READY,{apiVersion:1});
+  window.setTimeout(setHeight,0);
+})();
+</script>
+</body>
+</html>

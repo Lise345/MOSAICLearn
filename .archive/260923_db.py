@@ -26,6 +26,28 @@ _DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 _DATABASE_POOL = None
 _POOL_LOCK = Lock()
 
+# The Streamlit backend is the only supported database client. These tables live
+# in Supabase's public schema for PostgreSQL compatibility, but they must not be
+# directly readable or writable through PostgREST's anon/authenticated roles.
+# RLS is enabled without FORCE ROW LEVEL SECURITY so the table owner used by the
+# server-side DATABASE_URL can continue to run the existing backend queries.
+SERVER_ONLY_PUBLIC_TABLES = (
+    "users",
+    "privacy_consents",
+    "topic_progress",
+    "quiz_results",
+    "shares",
+    "community_posts",
+    "community_reactions",
+    "community_comments",
+    "community_notifications",
+    "mycelium_memberships",
+    "mycelium_connections",
+    "carousel_content",
+    "carousel_revisions",
+)
+POSTGREST_CLIENT_ROLES = ("anon", "authenticated")
+
 
 def configure_database(database_url: str | None = None) -> None:
     """Select the persistent database backend.
@@ -130,6 +152,134 @@ def _sqlite_add_missing_user_columns(conn) -> None:
     for column, definition in additions.items():
         if column not in existing:
             conn.execute(f"ALTER TABLE users ADD COLUMN {column} {definition}")
+
+
+def _existing_postgres_roles(cur, role_names: tuple[str, ...]) -> set[str]:
+    """Return the requested PostgreSQL roles that exist on this server."""
+    cur.execute(
+        "SELECT rolname FROM pg_roles WHERE rolname = ANY(%s)",
+        (list(role_names),),
+    )
+    return {str(row["rolname"]) for row in cur.fetchall()}
+
+
+def _harden_postgres_public_tables(cur) -> None:
+    """Keep app-managed public tables server-only when PostgREST is enabled.
+
+    Supabase exposes the public schema through PostgREST. MOSAIC Learn does not
+    use browser-side Supabase table access; all reads and writes go through the
+    server-side PostgreSQL DATABASE_URL. Enabling RLS with no client policies is
+    therefore intentional: PostgREST clients get no rows, while the table owner
+    used by the backend keeps its normal PostgreSQL access.
+    """
+    existing_roles = _existing_postgres_roles(cur, POSTGREST_CLIENT_ROLES)
+
+    for table in SERVER_ONLY_PUBLIC_TABLES:
+        # Table names are fixed application constants, not user input.
+        qualified = f'public."{table}"'
+        cur.execute(f"ALTER TABLE {qualified} ENABLE ROW LEVEL SECURITY")
+        cur.execute(f"REVOKE ALL PRIVILEGES ON TABLE {qualified} FROM PUBLIC")
+        for role in existing_roles:
+            cur.execute(
+                f'REVOKE ALL PRIVILEGES ON TABLE {qualified} FROM "{role}"'
+            )
+
+    # Prevent newly created app tables/sequences from inheriting broad API-role
+    # privileges from this database owner. This only changes defaults for future
+    # objects created by the current role.
+    cur.execute(
+        "ALTER DEFAULT PRIVILEGES IN SCHEMA public "
+        "REVOKE ALL ON TABLES FROM PUBLIC"
+    )
+    cur.execute(
+        "ALTER DEFAULT PRIVILEGES IN SCHEMA public "
+        "REVOKE ALL ON SEQUENCES FROM PUBLIC"
+    )
+    for role in existing_roles:
+        cur.execute(
+            f'ALTER DEFAULT PRIVILEGES IN SCHEMA public '
+            f'REVOKE ALL ON TABLES FROM "{role}"'
+        )
+        cur.execute(
+            f'ALTER DEFAULT PRIVILEGES IN SCHEMA public '
+            f'REVOKE ALL ON SEQUENCES FROM "{role}"'
+        )
+
+
+def postgres_security_status() -> dict:
+    """Return whether server-only public tables are protected from PostgREST.
+
+    This is intentionally a startup check rather than an authentication policy:
+    user identity in MOSAIC Learn comes from Streamlit/OIDC and does not map to
+    Supabase auth.uid().
+    """
+    if database_backend() != "postgres":
+        return {"backend": "sqlite", "ok": True, "tables": {}}
+
+    report: dict[str, dict] = {}
+    with _connect() as conn:
+        with conn.cursor() as cur:
+            existing_roles = _existing_postgres_roles(cur, POSTGREST_CLIENT_ROLES)
+            for table in SERVER_ONLY_PUBLIC_TABLES:
+                cur.execute(
+                    """
+                    SELECT c.relrowsecurity AS rls_enabled
+                    FROM pg_class c
+                    JOIN pg_namespace n ON n.oid = c.relnamespace
+                    WHERE n.nspname='public' AND c.relname=%s AND c.relkind='r'
+                    """,
+                    (table,),
+                )
+                row = cur.fetchone()
+                rls_enabled = bool(row and row["rls_enabled"])
+                role_access: dict[str, bool] = {}
+                for role in sorted(existing_roles):
+                    qualified = f"public.{table}"
+                    cur.execute(
+                        """
+                        SELECT
+                            has_table_privilege(%s, %s, 'SELECT') OR
+                            has_table_privilege(%s, %s, 'INSERT') OR
+                            has_table_privilege(%s, %s, 'UPDATE') OR
+                            has_table_privilege(%s, %s, 'DELETE') AS has_dml
+                        """,
+                        (
+                            role, qualified, role, qualified,
+                            role, qualified, role, qualified,
+                        ),
+                    )
+                    access_row = cur.fetchone()
+                    role_access[role] = bool(access_row and access_row["has_dml"])
+                report[table] = {
+                    "rls_enabled": rls_enabled,
+                    "postgrest_role_access": role_access,
+                }
+
+    ok = all(
+        item["rls_enabled"]
+        and not any(item["postgrest_role_access"].values())
+        for item in report.values()
+    )
+    return {"backend": "postgres", "ok": ok, "tables": report}
+
+
+def assert_postgres_security_hardened() -> None:
+    """Fail closed if a production PostgreSQL table remains API-exposed."""
+    status = postgres_security_status()
+    if status["backend"] != "postgres" or status["ok"]:
+        return
+    insecure = [
+        table
+        for table, item in status["tables"].items()
+        if (
+            not item["rls_enabled"]
+            or any(item["postgrest_role_access"].values())
+        )
+    ]
+    raise RuntimeError(
+        "PostgreSQL security hardening is incomplete for: "
+        + ", ".join(insecure)
+    )
 
 
 def init_db() -> None:
@@ -278,6 +428,36 @@ def init_db() -> None:
                 )
                 cur.execute(
                     """
+                    CREATE TABLE IF NOT EXISTS mycelium_memberships (
+                        user_id TEXT PRIMARY KEY,
+                        joined_at TEXT NOT NULL
+                    )
+                    """
+                )
+                cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS mycelium_connections (
+                        connection_id BIGSERIAL PRIMARY KEY,
+                        pair_key TEXT NOT NULL UNIQUE,
+                        requester_user_id TEXT NOT NULL,
+                        recipient_user_id TEXT NOT NULL,
+                        requester_name TEXT NOT NULL,
+                        requester_email TEXT DEFAULT '',
+                        share_requester_email INTEGER NOT NULL DEFAULT 0,
+                        status TEXT NOT NULL DEFAULT 'pending',
+                        created_at TEXT NOT NULL,
+                        responded_at TEXT DEFAULT ''
+                    )
+                    """
+                )
+                cur.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_mycelium_connections_recipient ON mycelium_connections(recipient_user_id, status, connection_id)"
+                )
+                cur.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_mycelium_connections_requester ON mycelium_connections(requester_user_id, status, connection_id)"
+                )
+                cur.execute(
+                    """
                     CREATE TABLE IF NOT EXISTS carousel_content (
                         module_id TEXT NOT NULL,
                         topic_id TEXT NOT NULL,
@@ -302,6 +482,7 @@ def init_db() -> None:
                     )
                     """
                 )
+                _harden_postgres_public_tables(cur)
         return
 
     with _connect() as conn:
@@ -405,6 +586,29 @@ def init_db() -> None:
                 ON community_comments(post_id, comment_id);
             CREATE INDEX IF NOT EXISTS idx_community_notifications_recipient
                 ON community_notifications(recipient_user_id, read_at, notification_id);
+
+            CREATE TABLE IF NOT EXISTS mycelium_memberships (
+                user_id TEXT PRIMARY KEY,
+                joined_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS mycelium_connections (
+                connection_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                pair_key TEXT NOT NULL UNIQUE,
+                requester_user_id TEXT NOT NULL,
+                recipient_user_id TEXT NOT NULL,
+                requester_name TEXT NOT NULL,
+                requester_email TEXT DEFAULT '',
+                share_requester_email INTEGER NOT NULL DEFAULT 0,
+                status TEXT NOT NULL DEFAULT 'pending',
+                created_at TEXT NOT NULL,
+                responded_at TEXT DEFAULT ''
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_mycelium_connections_recipient
+                ON mycelium_connections(recipient_user_id, status, connection_id);
+            CREATE INDEX IF NOT EXISTS idx_mycelium_connections_requester
+                ON mycelium_connections(requester_user_id, status, connection_id);
 
             CREATE TABLE IF NOT EXISTS carousel_content (
                 module_id TEXT NOT NULL,
@@ -543,6 +747,18 @@ def record_privacy_acceptance(user_id: str, policy_version: str) -> str:
 def delete_user_account(user_id: str) -> None:
     """Delete one learner account and its user-linked data in a single transaction."""
     with _connect() as conn:
+        # Mycelium is optional account-linked data. Remove it before deleting the user.
+        conn.execute(
+            _query(
+                "DELETE FROM mycelium_connections WHERE requester_user_id=? OR recipient_user_id=?"
+            ),
+            (user_id, user_id),
+        )
+        conn.execute(
+            _query("DELETE FROM mycelium_memberships WHERE user_id=?"),
+            (user_id,),
+        )
+
         # Remove interactions involving the account, including activity on posts
         # that will disappear with the profile.
         owned_posts = "SELECT post_id FROM community_posts WHERE user_id=?"
@@ -1037,3 +1253,389 @@ def mark_community_notifications_read(user_id: str) -> None:
             ),
             (_now(), user_id),
         )
+
+
+def _mycelium_pair_key(user_a: str, user_b: str) -> str:
+    a = str(user_a or "").strip()
+    b = str(user_b or "").strip()
+    if not a or not b:
+        raise ValueError("Both Mycelium user IDs are required")
+    if a == b:
+        raise ValueError("You cannot connect to yourself")
+    return "|".join(sorted((a, b)))
+
+
+def join_mycelium(user_id: str) -> None:
+    """Opt one learner into the visible Mycelium directory."""
+    now = _now()
+    with _connect() as conn:
+        conn.execute(
+            _query(
+                """
+                INSERT INTO mycelium_memberships(user_id, joined_at)
+                VALUES (?, ?)
+                ON CONFLICT(user_id) DO NOTHING
+                """
+            ),
+            (user_id, now),
+        )
+
+
+def leave_mycelium(user_id: str) -> None:
+    """Opt out and remove Mycelium-specific links and invitations for this learner."""
+    with _connect() as conn:
+        conn.execute(
+            _query(
+                """
+                DELETE FROM community_notifications
+                WHERE event_type IN ('mycelium_request', 'mycelium_accepted')
+                  AND (recipient_user_id=? OR actor_user_id=?)
+                """
+            ),
+            (user_id, user_id),
+        )
+        conn.execute(
+            _query(
+                "DELETE FROM mycelium_connections WHERE requester_user_id=? OR recipient_user_id=?"
+            ),
+            (user_id, user_id),
+        )
+        conn.execute(
+            _query("DELETE FROM mycelium_memberships WHERE user_id=?"),
+            (user_id,),
+        )
+
+
+def request_mycelium_connection(
+    requester_user_id: str,
+    requester_name: str,
+    requester_email: str,
+    recipient_user_id: str,
+    *,
+    share_email: bool = False,
+) -> int:
+    """Create one private pending invitation and notify only the recipient."""
+    pair_key = _mycelium_pair_key(requester_user_id, recipient_user_id)
+    now = _now()
+    shared_email = str(requester_email or "").strip() if share_email else ""
+
+    with _connect() as conn:
+        membership_rows = conn.execute(
+            _query(
+                """
+                SELECT user_id
+                FROM mycelium_memberships
+                WHERE user_id IN (?, ?)
+                """
+            ),
+            (requester_user_id, recipient_user_id),
+        ).fetchall()
+        members = {str(row["user_id"]) for row in membership_rows}
+        if requester_user_id not in members:
+            raise ValueError("Join Our mycelium before sending connection requests.")
+        if recipient_user_id not in members:
+            raise ValueError("That learner is no longer part of Our mycelium.")
+
+        existing = _dict(
+            conn.execute(
+                _query(
+                    """
+                    SELECT connection_id, requester_user_id, recipient_user_id, status
+                    FROM mycelium_connections
+                    WHERE pair_key=?
+                    """
+                ),
+                (pair_key,),
+            ).fetchone()
+        )
+        if existing:
+            if existing.get("status") == "accepted":
+                raise ValueError("You are already connected with this learner.")
+            if (
+                existing.get("status") == "pending"
+                and existing.get("recipient_user_id") == requester_user_id
+            ):
+                raise ValueError(
+                    "This learner already invited you. Open Our mycelium to accept or decline their request."
+                )
+            raise ValueError("A connection request is already pending with this learner.")
+
+        conn.execute(
+            _query(
+                """
+                INSERT INTO mycelium_connections(
+                    pair_key,
+                    requester_user_id,
+                    recipient_user_id,
+                    requester_name,
+                    requester_email,
+                    share_requester_email,
+                    status,
+                    created_at,
+                    responded_at
+                ) VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, '')
+                """
+            ),
+            (
+                pair_key,
+                requester_user_id,
+                recipient_user_id,
+                str(requester_name or "Learner").strip() or "Learner",
+                shared_email,
+                int(bool(share_email)),
+                now,
+            ),
+        )
+        connection = _dict(
+            conn.execute(
+                _query(
+                    "SELECT connection_id FROM mycelium_connections WHERE pair_key=?"
+                ),
+                (pair_key,),
+            ).fetchone()
+        )
+        if not connection:
+            raise RuntimeError("Could not create Mycelium connection request")
+        connection_id = int(connection["connection_id"])
+
+        conn.execute(
+            _query(
+                """
+                INSERT INTO community_notifications(
+                    recipient_user_id,
+                    actor_user_id,
+                    actor_name,
+                    event_type,
+                    event_detail,
+                    post_id,
+                    created_at,
+                    read_at
+                ) VALUES (?, ?, ?, 'mycelium_request', ?, NULL, ?, '')
+                """
+            ),
+            (
+                recipient_user_id,
+                requester_user_id,
+                str(requester_name or "Learner").strip() or "Learner",
+                str(connection_id),
+                now,
+            ),
+        )
+    return connection_id
+
+
+def respond_mycelium_connection(
+    connection_id: int,
+    recipient_user_id: str,
+    recipient_name: str,
+    *,
+    accept: bool,
+) -> bool:
+    """Accept or decline a pending invitation; only its intended recipient may do so."""
+    now = _now()
+    with _connect() as conn:
+        request = _dict(
+            conn.execute(
+                _query(
+                    """
+                    SELECT connection_id, requester_user_id, recipient_user_id, status
+                    FROM mycelium_connections
+                    WHERE connection_id=?
+                    """
+                ),
+                (int(connection_id),),
+            ).fetchone()
+        )
+        if not request or request.get("status") != "pending":
+            raise ValueError("This connection request is no longer pending.")
+        if request.get("recipient_user_id") != recipient_user_id:
+            raise PermissionError("Only the intended recipient can respond to this request.")
+
+        if accept:
+            conn.execute(
+                _query(
+                    """
+                    UPDATE mycelium_connections
+                    SET status='accepted', responded_at=?
+                    WHERE connection_id=? AND recipient_user_id=? AND status='pending'
+                    """
+                ),
+                (now, int(connection_id), recipient_user_id),
+            )
+            conn.execute(
+                _query(
+                    """
+                    INSERT INTO community_notifications(
+                        recipient_user_id,
+                        actor_user_id,
+                        actor_name,
+                        event_type,
+                        event_detail,
+                        post_id,
+                        created_at,
+                        read_at
+                    ) VALUES (?, ?, ?, 'mycelium_accepted', ?, NULL, ?, '')
+                    """
+                ),
+                (
+                    request["requester_user_id"],
+                    recipient_user_id,
+                    str(recipient_name or "Learner").strip() or "Learner",
+                    str(int(connection_id)),
+                    now,
+                ),
+            )
+        else:
+            # Delete declined requests so either learner can send a fresh request later.
+            conn.execute(
+                _query(
+                    "DELETE FROM mycelium_connections WHERE connection_id=? AND recipient_user_id=? AND status='pending'"
+                ),
+                (int(connection_id), recipient_user_id),
+            )
+
+        # Responding is itself an acknowledgement of the original invitation.
+        conn.execute(
+            _query(
+                """
+                UPDATE community_notifications
+                SET read_at=?
+                WHERE recipient_user_id=?
+                  AND event_type='mycelium_request'
+                  AND event_detail=?
+                  AND COALESCE(read_at, '')=''
+                """
+            ),
+            (now, recipient_user_id, str(int(connection_id))),
+        )
+    return bool(accept)
+
+
+def get_mycelium_state(user_id: str) -> dict:
+    """Return public network topology plus only this user's private pending requests."""
+    with _connect() as conn:
+        membership = conn.execute(
+            _query("SELECT 1 FROM mycelium_memberships WHERE user_id=?"),
+            (user_id,),
+        ).fetchone()
+        if not membership:
+            return {
+                "is_member": False,
+                "members": [],
+                "connections": [],
+                "incoming": [],
+                "outgoing": [],
+                "connected": [],
+                "blocked_user_ids": [],
+            }
+
+        member_rows = conn.execute(
+            """
+            SELECT u.user_id, u.name, u.organisation, u.country
+            FROM mycelium_memberships m
+            JOIN users u ON u.user_id=m.user_id
+            ORDER BY LOWER(COALESCE(u.name, '')), u.user_id
+            """
+        ).fetchall()
+        members = [dict(row) for row in member_rows]
+        member_ids = {str(row["user_id"]) for row in members}
+
+        accepted_rows = conn.execute(
+            """
+            SELECT connection_id, requester_user_id, recipient_user_id,
+                   requester_email, share_requester_email, created_at, responded_at
+            FROM mycelium_connections
+            WHERE status='accepted'
+            ORDER BY connection_id
+            """
+        ).fetchall()
+        accepted = [dict(row) for row in accepted_rows]
+        connections = [
+            {
+                "connection_id": int(row["connection_id"]),
+                "source": row["requester_user_id"],
+                "target": row["recipient_user_id"],
+            }
+            for row in accepted
+            if row["requester_user_id"] in member_ids
+            and row["recipient_user_id"] in member_ids
+        ]
+
+        incoming_rows = conn.execute(
+            _query(
+                """
+                SELECT c.connection_id, c.requester_user_id, c.requester_name,
+                       c.requester_email, c.share_requester_email, c.created_at,
+                       u.organisation, u.country
+                FROM mycelium_connections c
+                LEFT JOIN users u ON u.user_id=c.requester_user_id
+                WHERE c.recipient_user_id=? AND c.status='pending'
+                ORDER BY c.connection_id DESC
+                """
+            ),
+            (user_id,),
+        ).fetchall()
+        incoming = [dict(row) for row in incoming_rows]
+        for row in incoming:
+            if not int(row.get("share_requester_email") or 0):
+                row["requester_email"] = ""
+
+        outgoing_rows = conn.execute(
+            _query(
+                """
+                SELECT c.connection_id, c.recipient_user_id, c.created_at,
+                       u.name AS recipient_name, u.organisation, u.country
+                FROM mycelium_connections c
+                LEFT JOIN users u ON u.user_id=c.recipient_user_id
+                WHERE c.requester_user_id=? AND c.status='pending'
+                ORDER BY c.connection_id DESC
+                """
+            ),
+            (user_id,),
+        ).fetchall()
+        outgoing = [dict(row) for row in outgoing_rows]
+
+        connected = []
+        for row in accepted:
+            if row["requester_user_id"] == user_id:
+                peer_id = row["recipient_user_id"]
+                shared_email = ""
+            elif row["recipient_user_id"] == user_id:
+                peer_id = row["requester_user_id"]
+                shared_email = (
+                    str(row.get("requester_email") or "").strip()
+                    if int(row.get("share_requester_email") or 0)
+                    else ""
+                )
+            else:
+                continue
+            peer = next((member for member in members if member["user_id"] == peer_id), None)
+            if peer:
+                connected.append(
+                    {
+                        "connection_id": int(row["connection_id"]),
+                        "user_id": peer_id,
+                        "name": peer.get("name") or "Learner",
+                        "organisation": peer.get("organisation") or "",
+                        "country": peer.get("country") or "",
+                        "shared_email": shared_email,
+                    }
+                )
+
+    blocked = {user_id}
+    for row in incoming:
+        blocked.add(str(row["requester_user_id"]))
+    for row in outgoing:
+        blocked.add(str(row["recipient_user_id"]))
+    for row in connected:
+        blocked.add(str(row["user_id"]))
+
+    return {
+        "is_member": True,
+        "members": members,
+        "connections": connections,
+        "incoming": incoming,
+        "outgoing": outgoing,
+        "connected": connected,
+        "blocked_user_ids": sorted(blocked),
+    }

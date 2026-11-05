@@ -9365,20 +9365,20 @@ def _sh_commit_preview(preview: dict, selection: list[str], *, publish: bool, us
                             results["errors"].append(f"{item['title']} attachment {link.get('title')}: {str(ex)[:125]}")
                 if kind == "resource":
                     if publish:
-                        publish_cms_library_resource(item["id"], _normalise_library_resource_payload(item["id"], item), index * 10, user_id)
+                        publish_cms_library_resource(item["id"], _normalise_library_resource_payload(item["id"], item), item.get("_source_sort_order", index * 10), user_id)
                     else:
-                        save_cms_library_resource_draft(item["id"], _normalise_library_resource_payload(item["id"], item), index * 10, user_id)
+                        save_cms_library_resource_draft(item["id"], _normalise_library_resource_payload(item["id"], item), item.get("_source_sort_order", index * 10), user_id)
                 else:
                     if publish:
-                        _content_studio_publish_tool(item["id"], item, index * 10, user_id)
+                        _content_studio_publish_tool(item["id"], item, item.get("_source_sort_order", index * 10), user_id)
                     else:
-                        _content_studio_save_tool(item["id"], item, index * 10, user_id)
+                        _content_studio_save_tool(item["id"], item, item.get("_source_sort_order", index * 10), user_id)
                 results["saved"] += 1
                 if publish:
                     results["published"] += 1
             except Exception as ex:
                 results["errors"].append(f"{kind} '{item.get('title')}': {str(ex)[:130]}")
-    if publish and results["published"]:
+    if publish and results["published"] and preview.get("environment_verified"):
         try:
             save_active_learning_environment(docs)
         except Exception as ex:
@@ -9411,7 +9411,7 @@ def _sh_commit_preview(preview: dict, selection: list[str], *, publish: bool, us
 def _render_superhuman_import(user: dict) -> None:
     """Editor-only, manual Superhuman Docs import; no background sync."""
     st.subheader("Import / update from Superhuman Docs")
-    st.caption("Select a top-level learning-environment page only. Child modules and their classes are detected in the order shown in Superhuman Docs. Nothing changes until you explicitly save or publish.")
+    st.caption("Choose one module, a small class batch, or independent Resources/Tools rows. Only selected pages are exported; nothing changes until you explicitly save or publish.")
     st.info("Structure: learning environment → modules → optional Discover / Apply / Communicate phase pages → classes. A page may contain Resources, Tools and Continue exploring link sections. Page IDs remain stable across manual updates.")
     doc_input = st.text_input("Superhuman Docs document URL or ID", key="sh-doc-url", placeholder="https://coda.io/d/…_d…")
     token = st.text_input("API token (used only for this import session)", type="password", key="sh-api-token")
@@ -9468,34 +9468,144 @@ def _render_superhuman_import(user: dict) -> None:
     except Exception as ex:
         st.error(f"Page hierarchy could not be read: {ex}")
         return
+    st.markdown("#### Choose what to read")
+    mode = st.radio("Import scope", ["One module / class batch", "Libraries only"],
+                    key="sh-import-mode", horizontal=True)
+    chosen_module_id = ""
+    selected_class_ids: set[str] = set()
+    include_module_record = False
+    if mode == "One module / class batch":
+        if not tree:
+            st.warning("No modules found. You can still choose Libraries only.")
+            return
+        module_choices = [str(m["page"]["id"]) for m in tree]
+        chosen_module_id = st.selectbox(
+            "Module to import (one at a time)", module_choices,
+            format_func=lambda mid: next(str(m["page"].get("name") or mid)
+                                         for m in tree if str(m["page"]["id"]) == mid),
+            key="sh-batch-module")
+        module_spec = next(m for m in tree if str(m["page"]["id"]) == chosen_module_id)
+        module_exists = bool(get_cms_module(sh_stable_id("module", doc_id, chosen_module_id)))
+        include_module_record = st.checkbox(
+            "Include module landing page, learning objectives and phase introductions",
+            value=not module_exists, key="sh-batch-module-record")
+        include_classes = st.checkbox("Include class pages", value=True, key="sh-batch-classes")
+        if include_classes:
+            phase_labels = {"Understand": "Discover", "Apply": "Apply", "Convince": "Communicate"}
+            phase = st.selectbox("Learning phase", ["All phases", "Discover", "Apply", "Communicate"],
+                                 key="sh-batch-phase")
+            eligible = [item for item in module_spec["lessons"]
+                        if phase == "All phases" or phase_labels.get(item["level"]) == phase]
+            batch_size = st.selectbox("Classes per batch", [1, 2, 3, 5, 10], index=2,
+                                      key="sh-class-batch-size")
+            if eligible:
+                batches = [eligible[i:i + batch_size] for i in range(0, len(eligible), batch_size)]
+                batch_index = st.selectbox(
+                    "Batch to preview", list(range(len(batches))),
+                    format_func=lambda n: f"Batch {n + 1} of {len(batches)} · " +
+                    " / ".join(str(item["page"].get("name")) for item in batches[n]),
+                    key="sh-class-batch-index")
+                selected_class_ids = {str(item["page"]["id"]) for item in batches[batch_index]}
+                st.caption(f"Only {len(selected_class_ids)} selected class page(s) will be exported, "
+                           "in their original Superhuman Docs order. Choose the next batch later.")
+            else:
+                st.info("No classes in this phase. You may still import the module landing page.")
+        st.caption("For the fewest API requests, untick the module landing page when updating only "
+                   "existing classes. Class IDs and their full sequence positions stay unchanged.")
+    st.markdown("#### Library tables — optional, separate batches")
+    st.caption("**Neither library is read unless you opt in.** Importing classes does not require "
+               "refreshing your Tools or Resources. Already published records remain available.")
     table_ids = [""] + [str(t["id"]) for t in tables if t.get("id")]
     table_labels = {str(t.get("id")): str(t.get("name") or t.get("id")) for t in tables}
-    def table_format(tid: str) -> str:
-        return table_labels.get(tid) or "Don't import this table"
     resource_guess = next((tid for tid in table_ids if "resource" in table_labels.get(tid, "").casefold()), "")
     tool_guess = next((tid for tid in table_ids if "tool" in table_labels.get(tid, "").casefold()), "")
-    c1, c2 = st.columns(2)
-    with c1:
-        resource_id = st.selectbox("Resources table (optional)", table_ids, index=table_ids.index(resource_guess),
-                                   format_func=table_format, key="sh-resource-table")
-    with c2:
-        tool_id = st.selectbox("Tools table (optional)", table_ids, index=table_ids.index(tool_guess),
-                               format_func=table_format, key="sh-tool-table")
-    st.caption("Table data is read directly from the original named columns. Extra columns are retained in the record as source_columns, even if the current card UI doesn't display them.")
-    if st.button("Preview content and check for updates", key="sh-preview", type="primary", disabled=not token.strip()):
+    rcol, tcol = st.columns(2)
+    with rcol:
+        do_resources = st.checkbox("Include Resources", value=False, key="sh-include-resources")
+        resource_id = st.selectbox("Resources table", table_ids,
+                                   index=table_ids.index(resource_guess),
+                                   format_func=lambda tid: table_labels.get(tid) or "No table",
+                                   disabled=not do_resources, key="sh-resource-table") if do_resources else ""
+        resource_batch_size = st.selectbox("Resources per batch", [10, 25, 50, 100], index=1,
+                                           key="sh-resource-batch-size", disabled=not do_resources)
+        resource_start = st.number_input("Start from resource row", min_value=1, value=1, step=resource_batch_size,
+                                         disabled=not do_resources, key="sh-resource-start")
+    with tcol:
+        do_tools = st.checkbox("Include Tools", value=False, key="sh-include-tools")
+        tool_id = st.selectbox("Tools table", table_ids, index=table_ids.index(tool_guess),
+                               format_func=lambda tid: table_labels.get(tid) or "No table",
+                               disabled=not do_tools, key="sh-tool-table") if do_tools else ""
+        tool_batch_size = st.selectbox("Tools per batch", [10, 25, 50, 100], index=1,
+                                       key="sh-tool-batch-size", disabled=not do_tools)
+        tool_start = st.number_input("Start from tool row", min_value=1, value=1, step=tool_batch_size,
+                                     disabled=not do_tools, key="sh-tool-start")
+    current_scope = (
+        doc_id, root_id, mode, chosen_module_id, include_module_record,
+        tuple(sorted(selected_class_ids)), resource_id, tool_id,
+        int(resource_start) if resource_id else 0,
+        int(resource_batch_size) if resource_id else 0,
+        int(tool_start) if tool_id else 0,
+        int(tool_batch_size) if tool_id else 0,
+    )
+    has_work = bool(selected_class_ids or include_module_record or resource_id or tool_id)
+    if st.button("Preview selected batch", key="sh-preview", type="primary",
+                 disabled=not token.strip() or not has_work):
         try:
-            with st.spinner("Exporting selected pages and parsing their learning units…"):
-                preview = sh_build_preview(doc_id, pages_by_id[root_id], pages, token, resource_id, tool_id)
+            with st.spinner("Reading this batch from Superhuman Docs (with API rate-limit pacing)…"):
+                preview = sh_build_preview(
+                    doc_id, pages_by_id[root_id], pages, token, resource_id, tool_id,
+                    module_page_ids={chosen_module_id} if chosen_module_id else set(),
+                    lesson_page_ids=selected_class_ids,
+                    include_module_records=include_module_record,
+                    include_environment_page=False,
+                    resource_row_offset=int(resource_start) - 1 if resource_id else 0,
+                    resource_row_limit=int(resource_batch_size) if resource_id else None,
+                    tool_row_offset=int(tool_start) - 1 if tool_id else 0,
+                    tool_row_limit=int(tool_batch_size) if tool_id else None,
+                )
+            # Match @row links against the existing local CMS catalogue, not
+            # only the library rows fetched in this preview. Class-only batches
+            # must preserve working Streamlit Resource/Tool links.
+            from superhuman_sync import resolve_linked_references as _sh_resolve_links
+            def _stored_catalogue(rows: list[dict], id_key: str) -> list[dict]:
+                matched = []
+                for row in rows:
+                    if row.get("archived"):
+                        continue
+                    published = row.get("published") or row.get("draft") or {}
+                    if published.get("source_system") != "superhuman_docs":
+                        continue
+                    if str(published.get("source_doc_id")) != doc_id:
+                        continue
+                    matched.append({"id": row.get(id_key),
+                                    "title": published.get("title") or "",
+                                    "source_row_id": published.get("source_row_id") or "",
+                                    "source_row_url": published.get("source_row_url") or ""})
+                return matched
+            local_resources = _stored_catalogue(list_cms_library_resources(), "resource_id")
+            local_tools = _stored_catalogue(list_cms_tools(), "tool_id")
+            for kind, extra in (("resource", local_resources), ("tool", local_tools)):
+                known = {r["id"] for r in (preview.get("libraries") or {}).get(kind) or []}
+                extra[:] = [r for r in extra if r["id"] not in known]
+            resource_catalogue = (preview.get("libraries") or {}).get("resource", []) + local_resources
+            tool_catalogue = (preview.get("libraries") or {}).get("tool", []) + local_tools
+            for record in preview.get("entries") or []:
+                _sh_resolve_links(record["payload"], resource_catalogue, tool_catalogue,
+                                  check_resource=True, check_tool=True)
+                if record["kind"] == "module":
+                    for group in (record["payload"].get("phase_references") or {}).values():
+                        _sh_resolve_links(group, resource_catalogue, tool_catalogue,
+                                          check_resource=True, check_tool=True)
             st.session_state["sh-import-preview"] = preview
             st.session_state.pop("sh-import-chosen", None)
             st.session_state.pop("sh-last-report", None)
-            st.session_state["sh-import-source"] = (doc_id, root_id, resource_id, tool_id)
+            st.session_state["sh-import-source"] = current_scope
         except Exception as ex:
-            st.error(f"Import preview failed: {str(ex)[:350]}")
+            st.error(f"Batch preview failed: {str(ex)[:350]}")
     preview = st.session_state.get("sh-import-preview")
     if not preview:
         return
-    if st.session_state.get("sh-import-source") != (doc_id, root_id, resource_id, tool_id):
+    if st.session_state.get("sh-import-source") != current_scope:
         st.warning("Source selection changed. Preview again before saving; previous results are not eligible for import.")
         return
     counts = preview.get("count") or {}
@@ -9569,6 +9679,8 @@ def _render_superhuman_import(user: dict) -> None:
             for w in warnings[:80]:
                 st.caption("• " + str(w))
     st.markdown("#### Preview and choose records")
+    st.caption("Only records read in this batch appear below. Other published classes, tools, resources, "
+               "learner progress and notebook entries remain untouched.")
     tags, defaults = [], []
     for entry in preview.get("entries") or []:
         tag = f"{entry['kind']}:{entry['module_id']}:{entry['id']}"

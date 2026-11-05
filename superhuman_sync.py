@@ -8,11 +8,10 @@ from __future__ import annotations
 import hashlib
 import html as html_lib
 import re
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import urlparse, unquote
 
 from bs4 import BeautifulSoup
-from sh_api_client import export_page_html, list_pages, list_table_rows, list_tables
+from sh_api_client import export_page_html, list_pages, list_table_rows, list_tables, _request
 from sh_parser import parse_units
 
 BLOCK_NAMES = {"discover": "Understand", "understand": "Understand", "apply": "Apply", "convince": "Convince", "share": "Convince", "communicate": "Convince", "communication": "Convince"}
@@ -552,7 +551,8 @@ def table_record_payload(doc_id: str, table_id: str, row: dict, kind: str) -> di
     return mapping
 
 
-def resolve_linked_references(page: dict, resources: list[dict], tools: list[dict]) -> list[str]:
+def resolve_linked_references(page: dict, resources: list[dict], tools: list[dict], *,
+                              check_resource: bool = True, check_tool: bool = True) -> list[str]:
     """Resolve Coda @row links to canonical local records, without inventing IDs.
 
     Prefer API row ID, then the original row URL, then a unique exact title.
@@ -562,6 +562,10 @@ def resolve_linked_references(page: dict, resources: list[dict], tools: list[dic
     warnings = []
     page.setdefault("resource_ids", [])
     for key, catalogue in (("resource_references", resources), ("tool_references", tools)):
+        if key == "resource_references" and not check_resource:
+            continue
+        if key == "tool_references" and not check_tool:
+            continue
         by_row = {str(r.get("source_row_id")): r for r in catalogue if r.get("source_row_id")}
         by_name = {}
         by_link = {}
@@ -604,17 +608,27 @@ def resolve_linked_references(page: dict, resources: list[dict], tools: list[dic
 
 
 def build_preview(doc_id: str, root_page: dict, pages: list[dict], token: str,
-                  resource_table_id: str = "", tool_table_id: str = "", *, max_lessons: int = 60) -> dict:
+                  resource_table_id: str = "", tool_table_id: str = "", *, max_lessons: int = 60,
+                  module_page_ids: set[str] | None = None,
+                  lesson_page_ids: set[str] | None = None,
+                  include_module_records: bool = True,
+                  include_environment_page: bool = True,
+                  resource_row_offset: int = 0, resource_row_limit: int | None = None,
+                  tool_row_offset: int = 0, tool_row_limit: int | None = None) -> dict:
     """Manual, read-only preview of the learning-environment page tree.
 
     Every module/phase/class page can contain generic linked library units.
     All HTML is exported only on editor request; learner pages use the CMS.
     """
-    modules = page_tree(pages, str(root_page["id"]))
-    lesson_pages = [(m, item) for m in modules for item in m["lessons"]]
-    # A former importer could incorrectly create a Discover class from a
-    # renamed phase page. Report its exact stable ID so Content Studio can
-    # offer a one-time, opt-in archive without deleting notebook/progress data.
+    # Select the exact documents *before* starting any export. Do not export
+    # the entire environment when an editor asks for one class or library batch.
+    all_modules = page_tree(pages, str(root_page["id"]))
+    included_modules = (set(module_page_ids) if module_page_ids is not None else None)
+    included_lessons = (set(lesson_page_ids) if lesson_page_ids is not None else None)
+    modules = [m for m in all_modules if included_modules is None or
+               str(m["page"]["id"]) in included_modules]
+    lesson_pages = [(m, item) for m in modules for item in m["lessons"]
+                    if included_lessons is None or str(item["page"]["id"]) in included_lessons]
     phantom_candidates = [
         {"module_id": stable_id("module", doc_id, str(m["page"]["id"])),
          "lesson_id": stable_id("lesson", doc_id, str(phase["page"]["id"])),
@@ -623,23 +637,26 @@ def build_preview(doc_id: str, root_page: dict, pages: list[dict], token: str,
         for m in modules for phase in m["block_pages"]
     ]
     if len(lesson_pages) > max_lessons:
-        raise ValueError(f"This environment has {len(lesson_pages)} classes; the preview limit is {max_lessons}.")
-    unique_pages = {str(root_page["id"]): root_page}
-    for module in modules:
-        unique_pages[str(module["page"]["id"])] = module["page"]
-        for group in module["block_pages"]:
-            unique_pages[str(group["page"]["id"])] = group["page"]
+        raise ValueError(f"This batch contains {len(lesson_pages)} classes; choose a smaller batch (max {max_lessons}).")
+    unique_pages = {}
+    if include_environment_page and (modules or lesson_pages):
+        unique_pages[str(root_page["id"])] = root_page
+    if include_module_records:
+        for module in modules:
+            unique_pages[str(module["page"]["id"])] = module["page"]
+            for group in module["block_pages"]:
+                unique_pages[str(group["page"]["id"])] = group["page"]
     for _, item in lesson_pages:
         unique_pages[str(item["page"]["id"])] = item["page"]
     exports, errors = {}, []
-    with ThreadPoolExecutor(max_workers=3) as pool:
-        jobs = {pool.submit(export_page_html, doc_id, page_id, token): page_id for page_id in unique_pages}
-        for future in as_completed(jobs):
-            page_id = jobs[future]
-            try:
-                exports[page_id] = future.result()
-            except Exception as ex:
-                errors.append(f"Could not export {unique_pages[page_id].get('name')}: {str(ex)[:160]}")
+    # Coda export starts with POST and shares a strict write rate limit. A
+    # sequential queue, combined with the API client's POST pacing and 429
+    # backoff, avoids the uncontrolled 3-worker export burst used previously.
+    for page_id, page in unique_pages.items():
+        try:
+            exports[page_id] = export_page_html(doc_id, page_id, token)
+        except Exception as ex:
+            errors.append(f"Could not export {page.get('name')}: {str(ex)[:180]}")
     root_html = exports.get(str(root_page["id"]), "")
     environment_intro, _ = page_intro_and_objectives(root_html)
     header = (BeautifulSoup(root_html, "html.parser").find("h1") if root_html else None)
@@ -650,13 +667,23 @@ def build_preview(doc_id: str, root_page: dict, pages: list[dict], token: str,
         "intro": environment_intro, "url": str(root_page.get("browserLink") or ""),
     }
     entries, warnings = [], list(errors)
-    for parent_name in unverified_sibling_order(pages, str(root_page["id"])):
+    uncertain = set(unverified_sibling_order(pages, str(root_page["id"])))
+    selected_names = {str(root_page.get("name") or "")} | {
+        str(p["page"].get("name") or "") for p in modules
+    }
+    selected_names.update(str(g["page"].get("name") or "") for m in modules for g in m["block_pages"])
+    for parent_name in sorted(uncertain & selected_names):
         warnings.append(f"Page order could not be verified under '{parent_name}': check class order before publishing.")
-    for mi, module_spec in enumerate(modules, start=1):
+    module_positions = {str(m["page"]["id"]): i for i, m in enumerate(all_modules, start=1)}
+    for module_spec in modules:
+        mi = module_positions[str(module_spec["page"]["id"])]
         page = module_spec["page"]
         page_id = str(page["id"])
         module_id = stable_id("module", doc_id, page_id)
         exported = exports.get(page_id, "")
+        # A class-only batch must never create an empty module record.
+        if not include_module_records:
+            exported = ""
         intro, objectives = page_intro_and_objectives(exported)
         if not objectives and exported:
             objective_unit = _first_nonempty(parse_units(exported).get("units", []), "objectives")
@@ -667,7 +694,7 @@ def build_preview(doc_id: str, root_page: dict, pages: list[dict], token: str,
         metadata_cover = _page_cover_url(page)
         block_intros, phase_links, phase_digests = {}, {}, []
         phase_export_failed = False
-        for block in module_spec["block_pages"]:
+        for block in (module_spec["block_pages"] if include_module_records else []):
             block_page_id = str(block["page"]["id"])
             block_html = exports.get(block_page_id, "")
             block_intro, _ = page_intro_and_objectives(block_html)
@@ -707,14 +734,18 @@ def build_preview(doc_id: str, root_page: dict, pages: list[dict], token: str,
                  ":position:" + str(mi) + ":group_pages:" + "|".join(phase_digests)).encode()
             ).hexdigest() if exported else "",
         }
-        if not exported:
-            warnings.append(f"Module page '{payload['title']}' was not exported; objectives cannot be verified")
-        if not objectives:
-            warnings.append(f"Module '{payload['title']}' has no detectable 'What you will learn' list")
-        entries.append({"kind": "module", "id": module_id, "module_id": module_id,
-                        "payload": payload, "sort_order": mi * 10})
+        if include_module_records:
+            if not exported:
+                warnings.append(f"Module page '{payload['title']}' could not be exported; module update was excluded, but selected classes may still import.")
+            else:
+                if not objectives:
+                    warnings.append(f"Module '{payload['title']}' has no detectable 'What you will learn' list")
+                entries.append({"kind": "module", "id": module_id, "module_id": module_id,
+                                "payload": payload, "sort_order": mi * 10})
         for li, item in enumerate(module_spec["lessons"], start=1):
             lesson_page = item["page"]
+            if included_lessons is not None and str(lesson_page["id"]) not in included_lessons:
+                continue
             lesson_html = exports.get(str(lesson_page["id"]))
             if lesson_html is None:
                 continue
@@ -733,15 +764,19 @@ def build_preview(doc_id: str, root_page: dict, pages: list[dict], token: str,
         if not table_id:
             continue
         try:
-            records = list_rows_with_values(doc_id, table_id, token)
+            offset = resource_row_offset if kind == "resource" else tool_row_offset
+            row_limit = resource_row_limit if kind == "resource" else tool_row_limit
+            records = list_rows_with_values(doc_id, table_id, token, offset=offset, max_rows=row_limit)
             library[kind] = [table_record_payload(doc_id, table_id, record, kind) for record in records]
+            for idx, record in enumerate(library[kind], start=offset + 1):
+                record["_source_sort_order"] = idx * 10
             # Coda simple-format attachment cells sometimes contain only a
             # filename. A rich-format reread can expose an actual file link.
             # Only do this extra request in manual preview if needed.
             if any(record.get("_unresolved_attachments") for record in library[kind]):
                 try:
                     rich = {str(r.get("id")): r for r in list_rows_with_values(
-                        doc_id, table_id, token, value_format="rich")}
+                        doc_id, table_id, token, value_format="rich", offset=offset, max_rows=row_limit)}
                     for record in library[kind]:
                         source = rich.get(str(record.get("source_row_id"))) or {}
                         links = list(record.get("attachment_links") or [])
@@ -765,13 +800,23 @@ def build_preview(doc_id: str, root_page: dict, pages: list[dict], token: str,
         except Exception as ex:
             warnings.append(f"Could not read {kind} table: {str(ex)[:160]}")
 
+    # Library imports are optional. When skipped, retain original @row URLs
+    # without flooding the preview with misleading unmatched-link warnings.
     for entry in entries:
-        warnings.extend(resolve_linked_references(entry["payload"], library["resource"], library["tool"]))
-        if entry["kind"] == "module":
-            for group in (entry["payload"].get("phase_references") or {}).values():
-                warnings.extend(resolve_linked_references(group, library["resource"], library["tool"]))
-    modules_by_title = {entry["payload"]["title"].casefold().strip(): entry["id"]
-                        for entry in entries if entry["kind"] == "module"}
+        if resource_table_id or tool_table_id:
+            warnings.extend(resolve_linked_references(
+                entry["payload"], library["resource"], library["tool"],
+                check_resource=bool(resource_table_id and resource_row_limit is None),
+                check_tool=bool(tool_table_id and tool_row_limit is None)))
+            if entry["kind"] == "module":
+                for group in (entry["payload"].get("phase_references") or {}).values():
+                    warnings.extend(resolve_linked_references(
+                        group, library["resource"], library["tool"],
+                        check_resource=bool(resource_table_id and resource_row_limit is None),
+                        check_tool=bool(tool_table_id and tool_row_limit is None)))
+    modules_by_title = {str(m["page"].get("name") or "").casefold().strip():
+                        stable_id("module", doc_id, str(m["page"]["id"]))
+                        for m in all_modules}
     for record in library["resource"]:
         linked_modules = _lookup(_column_values({"values": record.get("source_columns") or {}}),
                                  ("Related module(s)", "Related modules"))
@@ -810,26 +855,38 @@ def build_preview(doc_id: str, root_page: dict, pages: list[dict], token: str,
                     "lesson_id": page["id"] if entry["kind"] == "lesson" else ""}
             if link not in links:
                 links.append(link)
-    return {"environment": environment, "entries": entries, "obsolete_phase_lesson_candidates": phantom_candidates, "libraries": library,
-            "warnings": warnings, "count": {"modules": len(modules), "classes": len(lesson_pages),
-                                           "resources": len(library["resource"]), "tools": len(library["tool"])}}
+    return {"environment": environment, "environment_verified": bool(root_html),
+            "entries": entries, "obsolete_phase_lesson_candidates": phantom_candidates, "libraries": library,
+            "warnings": warnings, "count": {"modules": sum(e["kind"] == "module" for e in entries),
+                "classes": sum(e["kind"] == "lesson" for e in entries),
+                "resources": len(library["resource"]), "tools": len(library["tool"])},
+            "scope": {"module_page_ids": sorted(included_modules) if included_modules is not None else None,
+                      "lesson_page_ids": sorted(included_lessons) if included_lessons is not None else None,
+                      "resource_row_offset": resource_row_offset, "tool_row_offset": tool_row_offset}}
 
 
-def list_rows_with_values(doc_id: str, table_id: str, token: str, *, value_format: str = "simple") -> list[dict]:
+def list_rows_with_values(doc_id: str, table_id: str, token: str, *, value_format: str = "simple",
+                          offset: int = 0, max_rows: int | None = None) -> list[dict]:
     """Read every row's named columns (not only display name). No writes to Coda."""
     import requests
     from urllib.parse import quote
     api = f"https://coda.io/apis/v1/docs/{quote(doc_id, safe='')}/tables/{quote(table_id, safe='')}/rows"
-    rows, next_token = [], None
+    if offset < 0 or (max_rows is not None and max_rows < 1):
+        raise ValueError("Library row offset must be >=0, and batch size must be positive")
+    rows, next_token, seen_count = [], None, 0
     for _ in range(100):
         params = {"limit": 100, "valueFormat": value_format, "useColumnNames": "true"}
         if next_token:
             params["pageToken"] = next_token
-        resp = requests.get(api, headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
-                            params=params, timeout=30)
-        resp.raise_for_status()
-        data = resp.json()
-        rows.extend(data.get("items") or [])
+        data = _request("GET", api, token, params=params).json()
+        page_rows = data.get("items") or []
+        for row in page_rows:
+            seen_count += 1
+            if seen_count <= offset:
+                continue
+            rows.append(row)
+            if max_rows is not None and len(rows) >= max_rows:
+                return rows
         next_token = data.get("nextPageToken")
         if not next_token:
             return rows
