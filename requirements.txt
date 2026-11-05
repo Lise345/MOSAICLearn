@@ -3,3 +3,5 @@ psycopg[binary]>=3.2,<4
 psycopg-pool>=3.2,<4
 streamlit-quill>=0.0.3
 bleach>=6.2,<7
+requests>=2.31
+beautifulsoup4>=4.12
