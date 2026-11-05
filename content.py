@@ -9,7 +9,7 @@ is intentionally condensed for the prototype rather than migrated verbatim.
 LEVEL_META = {
     "Understand": {
         "number": "01",
-        "verb": "Understand",
+        "verb": "Discover",
         "tagline": "Build the shared language and concepts.",
         "icon": "◌",
     },

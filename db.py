@@ -52,6 +52,7 @@ SERVER_ONLY_PUBLIC_TABLES = (
     "cms_library_resources",
     "cms_resource_files",
     "learning_content_revisions",
+    "cms_learning_environments",
 )
 POSTGREST_CLIENT_ROLES = ("anon", "authenticated")
 
@@ -645,6 +646,10 @@ def init_db() -> None:
                 cur.execute(
                     "CREATE INDEX IF NOT EXISTS idx_cms_resource_scope ON cms_resource_files(scope_type, scope_id, archived, sort_order, resource_id)"
                 )
+                cur.execute("""CREATE TABLE IF NOT EXISTS cms_learning_environments (
+                    environment_id TEXT PRIMARY KEY, title TEXT NOT NULL, intro TEXT NOT NULL DEFAULT '',
+                    source_doc_id TEXT NOT NULL, source_page_id TEXT NOT NULL, updated_at TEXT NOT NULL
+                )""")
                 _seed_tool_format_drafts(conn)
                 _harden_postgres_public_tables(cur)
         return
@@ -792,6 +797,11 @@ def init_db() -> None:
                 content_json TEXT NOT NULL,
                 published_by TEXT DEFAULT '',
                 published_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS cms_learning_environments (
+                environment_id TEXT PRIMARY KEY, title TEXT NOT NULL, intro TEXT NOT NULL DEFAULT '',
+                source_doc_id TEXT NOT NULL, source_page_id TEXT NOT NULL, updated_at TEXT NOT NULL
             );
 
             CREATE TABLE IF NOT EXISTS cms_modules (
@@ -2776,3 +2786,27 @@ def get_mycelium_state(user_id: str) -> dict:
         "connected": connected,
         "blocked_user_ids": sorted(blocked),
     }
+
+
+# Manual Superhuman Docs import stores only public-facing metadata here; tokens
+# are never persisted and must stay in Streamlit session state or Secrets.
+def get_active_learning_environment() -> dict | None:
+    with _connect() as conn:
+        row = conn.execute(_query(
+            "SELECT * FROM cms_learning_environments WHERE environment_id=?"), ("active",)).fetchone()
+    return _dict(row)
+
+
+def save_active_learning_environment(item: dict) -> None:
+    with _connect() as conn:
+        conn.execute(_query("""
+            INSERT INTO cms_learning_environments(
+                environment_id, title, intro, source_doc_id, source_page_id, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(environment_id) DO UPDATE SET
+                title=excluded.title, intro=excluded.intro,
+                source_doc_id=excluded.source_doc_id,
+                source_page_id=excluded.source_page_id, updated_at=excluded.updated_at
+        """), ("active", str(item.get("title") or "Learning environment"),
+                str(item.get("intro") or ""), str(item.get("source_doc_id") or ""),
+                str(item.get("source_page_id") or ""), _now()))
