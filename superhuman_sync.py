@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import html as html_lib
+import json
 import re
 from urllib.parse import urlparse, unquote
 
@@ -493,6 +494,82 @@ def _extract_attachment_links(value) -> list[dict]:
     return links
 
 
+
+def _rich_markdown(value) -> str:
+    """Coda valueFormat=rich text is Markdown; plain strings may be fenced.
+
+    Keep headings, links, bold/italic, numbered lists and paragraphs intact.
+    """
+    if isinstance(value, dict):
+        value = value.get("value") or value.get("text") or ""
+    if not isinstance(value, str):
+        return ""
+    value = value.strip()
+    # Coda encodes unformatted text as a single triple-backtick block.
+    if value.startswith("```") and value.endswith("```") and value.count("```") == 2:
+        value = value[3:-3].strip("\n")
+    return value
+
+
+def _image_url_from_rich(value) -> str:
+    """Resolve an actual HTTPS image URL, never pretend a filename is a URL.
+
+    Coda encodes image cells as JSON-LD objects under valueFormat=rich.
+    Accept structured values, lists, JSON strings or Markdown image links.
+    """
+    if isinstance(value, (list, tuple)):
+        for child in value:
+            found = _image_url_from_rich(child)
+            if found:
+                return found
+        return ""
+    if isinstance(value, dict):
+        for name in ("contentUrl", "url", "imageUrl", "downloadUrl", "src", "href", "@id"):
+            if value.get(name):
+                found = _image_url_from_rich(value[name])
+                if found:
+                    return found
+        for child in value.values():
+            if isinstance(child, (dict, list, tuple)):
+                found = _image_url_from_rich(child)
+                if found:
+                    return found
+        return ""
+    if not isinstance(value, str):
+        return ""
+    value = value.strip()
+    if value.startswith(('{', '[')):
+        try:
+            return _image_url_from_rich(json.loads(value))
+        except (json.JSONDecodeError, ValueError):
+            pass
+    if _safe_link(value):
+        return value
+    # A Markdown image cell is also a supported image source.
+    match = re.search(r"!?\[[^\]]*\]\((https://[^\s)]+)\)", value)
+    return match.group(1) if match and _safe_link(match.group(1)) else ""
+
+
+def enrich_tool_from_rich_row(record: dict, rich_row: dict) -> None:
+    """Overlay only format-sensitive columns; keep stable IDs and simple metadata."""
+    raw_values = rich_row.get("values") or {}
+    values = _column_values(rich_row)
+    desc = _lookup(values, ("Short description", "Description"))
+    howto = _lookup(values, ("How to use", "Steps"))
+    # A rich cell's native Markdown is a string, not a Python representation.
+    if desc:
+        record["description_rich"] = _rich_markdown(desc)
+    if howto:
+        record["steps_rich"] = _rich_markdown(howto)
+    for column, cell in raw_values.items():
+        if normalized_column(column) in {"image", "image url", "tool image", "thumbnail"}:
+            url = _image_url_from_rich(cell)
+            if url:
+                record["image_url"] = url
+                record["_unresolved_image"] = False
+                break
+
+
 def table_record_payload(doc_id: str, table_id: str, row: dict, kind: str) -> dict:
     """Copy table columns using their actual names, including extras as source_columns."""
     values = _column_values(row)
@@ -546,7 +623,12 @@ def table_record_payload(doc_id: str, table_id: str, row: dict, kind: str) -> di
         mapping["format"] = ("Model" if "model" in typ else "Digital tool" if any(x in typ for x in ("software", "digital"))
                              else "Website" if "website" in typ else "Workshop")
         mapping["keywords"] = [x.strip() for x in mapping.get("keywords", "").replace(";", ",").split(",") if x.strip()]
+        mapping["steps_text"] = mapping.get("steps", "")
         mapping["steps"] = [s.strip() for s in mapping.get("steps", "").splitlines() if s.strip()]
+        mapping["image_name"] = _lookup(values, ("Image", "Tool image", "Thumbnail"))
+        mapping["image_url"] = _image_url_from_rich(
+            _lookup(values, ("Image URL", "Tool image URL", "Image", "Tool image", "Thumbnail")))
+        mapping["_unresolved_image"] = bool(mapping["image_name"] and not mapping["image_url"])
         mapping["status"] = "Available"
     return mapping
 
@@ -770,33 +852,44 @@ def build_preview(doc_id: str, root_page: dict, pages: list[dict], token: str,
             library[kind] = [table_record_payload(doc_id, table_id, record, kind) for record in records]
             for idx, record in enumerate(library[kind], start=offset + 1):
                 record["_source_sort_order"] = idx * 10
-            # Coda simple-format attachment cells sometimes contain only a
-            # filename. A rich-format reread can expose an actual file link.
-            # Only do this extra request in manual preview if needed.
-            if any(record.get("_unresolved_attachments") for record in library[kind]):
+            # The rich API exposes formatted text as Markdown and image cells
+            # as JSON-LD URLs. One additional paginated GET per selected Tools
+            # batch, NOT an export/download for every tool. Resources keep the
+            # existing single GET unless attachments need a rich-format reread.
+            needs_rich = kind == "tool" or any(
+                record.get("_unresolved_attachments") for record in library[kind])
+            if needs_rich:
                 try:
                     rich = {str(r.get("id")): r for r in list_rows_with_values(
                         doc_id, table_id, token, value_format="rich", offset=offset, max_rows=row_limit)}
                     for record in library[kind]:
                         source = rich.get(str(record.get("source_row_id"))) or {}
-                        links = list(record.get("attachment_links") or [])
-                        for name, value in (source.get("values") or {}).items():
-                            if normalized_column(name) in {
-                                "download url", "file url", "pdf url", "files", "file", "pdf",
-                                "attachments", "attachment", "downloadable file", "supporting materials",
-                            }:
-                                links.extend(_extract_attachment_links(value))
-                        seen = set()
-                        record["attachment_links"] = [link for link in links if not
-                                                     (link["url"] in seen or seen.add(link["url"]))]
-                        if record["attachment_links"]:
-                            record["_unresolved_attachments"] = False
+                        if kind == "tool":
+                            enrich_tool_from_rich_row(record, source)
+                        if record.get("_unresolved_attachments"):
+                            links = list(record.get("attachment_links") or [])
+                            for name, value in (source.get("values") or {}).items():
+                                if normalized_column(name) in {
+                                    "download url", "file url", "pdf url", "files", "file", "pdf",
+                                    "attachments", "attachment", "downloadable file", "supporting materials",
+                                }:
+                                    links.extend(_extract_attachment_links(value))
+                            seen = set()
+                            record["attachment_links"] = [link for link in links if not
+                                                         (link["url"] in seen or seen.add(link["url"]))]
+                            if record["attachment_links"]:
+                                record["_unresolved_attachments"] = False
                 except Exception as ex:
-                    warnings.append(f"{kind.title()} file links could not be checked in rich API format: {str(ex)[:140]}")
+                    warnings.append(f"{kind.title()} rich text/images could not be read; "
+                                    f"simple text was retained: {str(ex)[:140]}")
             for record in library[kind]:
                 if record.get("_unresolved_attachments"):
                     warnings.append(f"{kind.title()} '{record['title']}' has an attachment field "
                                     "but no file URL was returned; add a working link in the table.")
+                if kind == "tool" and record.get("_unresolved_image"):
+                    warnings.append(f"Tool '{record['title']}' has an Image value "
+                                    f"('{record.get('image_name')}') but no downloadable URL. "
+                                    "Try an Image URL column if the rich API does not expose the attachment URL.")
         except Exception as ex:
             warnings.append(f"Could not read {kind} table: {str(ex)[:160]}")
 

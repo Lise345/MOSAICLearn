@@ -4592,12 +4592,21 @@ def _safe_embed_url(value: str | None) -> str:
     return url if parsed.scheme in {"http", "https"} and parsed.netloc else ""
 
 
-def _tool_card_media_html(tool_id: str, tool: dict) -> str:
+def _tool_image_id(tool_id: str, tool: dict) -> str:
+    """Prefer an imported Image-column photo, then a manually uploaded one."""
+    imported_id = str(tool.get("image_resource_id") or "")
+    if imported_id and _resource_image_data_uri(imported_id):
+        return imported_id
     rows = _resource_files_for("tool_image", tool_id)
-    if rows:
-        uri = _resource_image_data_uri(rows[0].get("resource_id"))
+    return str(rows[0].get("resource_id") or "") if rows else ""
+
+
+def _tool_card_media_html(tool_id: str, tool: dict) -> str:
+    image_id = _tool_image_id(tool_id, tool)
+    if image_id:
+        uri = _resource_image_data_uri(image_id)
         if uri:
-            alt = escape(str(rows[0].get("description") or tool.get("title") or "Tool image"))
+            alt = escape(str(tool.get("image_name") or tool.get("title") or "Tool image"))
             return f"<div class='m-tool-card-media'><img src='{uri}' alt='{alt}'></div>"
     format_label = str(tool.get("format") or "Workshop")
     icon = TOOL_FORMAT_ICONS.get(format_label, "◫")
@@ -4664,11 +4673,24 @@ def _render_tool_preview(tool_id: str, tool: dict) -> None:
     if gallery_rows:
         _render_tool_gallery(tool_id)
 
+def _tool_rich_markdown(value: str | None) -> str:
+    """Markdown from the rich Coda API is rendered by Streamlit safely.
+
+    Do not use unsafe_allow_html: rich text is author-authored, not trusted HTML.
+    """
+    raw = str(value or "").strip()
+    if raw.startswith("```") and raw.endswith("```") and raw.count("```") == 2:
+        raw = raw[3:-3].strip("\n")
+    return raw
+
+
 def _render_tool_detail(tool_id: str, tool: dict) -> None:
+    """Two-column editorial tool page; only reveal metadata after main guidance."""
     source_module_id = str(st.session_state.get("module_id") or "")
     source_topic_id = str(st.session_state.get("topic_id") or "")
     came_from_lesson = bool(source_module_id in MODULES and source_topic_id and topic_by_id(source_module_id, source_topic_id))
-    st.button("← All tools", key=f"tool-detail-back-{tool_id}", on_click=navigate, args=("tools", "", "", "", None), kwargs={"_rerun": False})
+    st.button("← All tools", key=f"tool-detail-back-{tool_id}", on_click=navigate,
+              args=("tools", "", "", "", None), kwargs={"_rerun": False})
 
     format_label = str(tool.get("format") or "Workshop")
     format_class = _tool_format_class(format_label)
@@ -4687,11 +4709,10 @@ def _render_tool_detail(tool_id: str, tool: dict) -> None:
             unsafe_allow_html=True,
         )
     with hero_right:
-        images = _resource_files_for("tool_image", tool_id)
-        if images:
-            record = _cached_resource_file(images[0]["resource_id"])
-            if record and record.get("file_data") and not record.get("archived"):
-                st.image(record["file_data"], caption=str(record.get("description") or ""), width="stretch")
+        image_id = _tool_image_id(tool_id, tool)
+        image = _cached_resource_file(image_id) if image_id else None
+        if image and image.get("file_data") and not image.get("archived"):
+            st.image(image["file_data"], width="stretch")
         else:
             st.markdown(f"<div class='m-tool-detail-placeholder {format_class}'><span>{escape(format_icon)}</span><strong>{escape(format_label)}</strong></div>", unsafe_allow_html=True)
 
@@ -4702,18 +4723,113 @@ def _render_tool_detail(tool_id: str, tool: dict) -> None:
     if came_from_lesson:
         source_module = MODULES[source_module_id]
         st.info(f"You opened this tool from **{source_module['short_title']}**.")
-        st.button("← Return to the learning step", key=f"tool-detail-return-{tool_id}", on_click=navigate, args=("topic", source_module_id, source_topic_id, None, None), kwargs={"_rerun": False})
+        st.button("← Return to the learning step", key=f"tool-detail-return-{tool_id}",
+                  on_click=navigate, args=("topic", source_module_id, source_topic_id, None, None),
+                  kwargs={"_rerun": False})
 
-    if tool.get("source_system") == "superhuman_docs" and tool.get("source_columns"):
-        _render_source_record(tool["source_columns"], kind="tool")
-    if tool.get("description"):
+    # Primary content: always two columns. Rich Coda Markdown preserves
+    # links, bold text, subheadings, numbered steps, lists and paragraphs.
+    description = _tool_rich_markdown(tool.get("description_rich") or tool.get("description"))
+    instructions = _tool_rich_markdown(tool.get("steps_rich") or tool.get("steps_text"))
+    description_col, howto_col = st.columns(2, gap="large")
+    with description_col:
         st.markdown("### Description")
-        st.write(tool["description"])
-
-    if tool.get("steps"):
+        if description:
+            st.markdown(description)
+        else:
+            st.caption("Description to be added.")
+    with howto_col:
         st.markdown("### How to use it")
-        for idx, step in enumerate(tool.get("steps") or [], start=1):
-            st.markdown(f"**{idx}.** {escape(step)}")
+        if instructions:
+            st.markdown(instructions)
+        elif tool.get("steps"):
+            for idx, step in enumerate(tool.get("steps") or [], start=1):
+                st.markdown(f"**{idx}.** {escape(str(step))}")
+        else:
+            st.caption("Instructions to be added.")
+
+    # Access links and files immediately follow the core guidance, not buried
+    # below a duplicate imported raw-record section.
+    managed_files = [meta for meta in _resource_files_for("tool", tool_id) if not meta.get("archived")]
+    shipped_files = []
+    for file_name in TOOL_DOWNLOAD_FILES.get(tool_id, []):
+        file_path, file_type, error = configured_tool_file(file_name)
+        if file_path and not error:
+            shipped_files.append((file_name, file_path, file_type))
+    attachment_links = [item for item in tool.get("attachment_links") or []
+                        if isinstance(item, dict) and _valid_external_url(str(item.get("url") or ""))]
+    website = str(tool.get("website_url") or "")
+    has_website = _valid_external_url(website)
+    if has_website or managed_files or shipped_files or attachment_links:
+        st.markdown("### Open or download")
+        action_cols = st.columns(2, gap="large")
+        with action_cols[0]:
+            if has_website:
+                st.link_button("Open website / tool ↗", website, type="primary", width="stretch")
+            for idx, item in enumerate(attachment_links):
+                st.link_button(f"Open {item.get('title') or 'supporting file'} ↗",
+                               str(item["url"]), key=f"sh-tool-source-link-{tool_id}-{idx}", width="stretch")
+        with action_cols[1]:
+            for idx, meta in enumerate(managed_files):
+                _render_resource_download(meta, key=f"tool-detail-managed-{tool_id}-{idx}",
+                                          button_type="secondary", label=f"Download {meta.get('title') or meta.get('file_name')} ↓")
+            for idx, (file_name, file_path, file_type) in enumerate(shipped_files):
+                st.download_button(f"Download {file_name} ↓", data=file_path.read_bytes(),
+                                   file_name=file_name, mime=file_type[1],
+                                   key=f"tool-detail-shipped-{tool_id}-{idx}", width="stretch")
+            if len(managed_files) + len(shipped_files) > 1:
+                data, name, mime_type, count = _tool_download_payload(tool_id, tool)
+                st.download_button(f"Download all {count} resources (.zip) ↓",
+                                   data=data, file_name=name, mime=mime_type,
+                                   key=f"tool-detail-all-{tool_id}", width="stretch")
+
+    columns = tool.get("source_columns") or {}
+    audience = _record_value(columns, "Target users", "Target audience") or str(tool.get("target_users") or "")
+    purpose = _record_value(columns, "Purpose / useful for", "Purpose", "Useful for") or str(tool.get("purpose") or "")
+    if audience or purpose:
+        audience_col, purpose_col = st.columns(2, gap="large")
+        with audience_col:
+            if audience:
+                st.markdown("### Target audience")
+                st.markdown(audience)
+        with purpose_col:
+            if purpose:
+                st.markdown("### Purpose")
+                st.markdown(purpose)
+
+    # Secondary metadata deliberately comes last. Keep the full range of
+    # source fields without printing duplicate Description / How-to / Image.
+    owner = _record_value(columns, "Developer / owner", "Developer", "Owner") or str(tool.get("developer") or "")
+    requirements = _record_value(columns, "Technical requirements") or str(tool.get("requirements") or "")
+    inputs = _record_value(columns, "Required inputs") or str(tool.get("inputs") or "")
+    if owner or requirements or inputs:
+        owner_col, practical_col = st.columns(2, gap="large")
+        with owner_col:
+            if owner:
+                st.markdown("### Developer / owner")
+                st.markdown(owner)
+        with practical_col:
+            if requirements or inputs:
+                st.markdown("### Practical requirements")
+                if requirements:
+                    st.markdown(requirements)
+                if inputs:
+                    _record_field("Required inputs", inputs, list_style=True)
+
+    shown_keys = {
+        "title", "tool name", "name", "image", "image url", "tool image", "thumbnail",
+        "short description", "description", "how to use", "steps", "tool type", "type", "format",
+        "access link", "main url", "url", "supporting materials", "download url", "pdf", "file",
+        "files", "attachments", "keywords", "related modules", "related resources", "part of mosaic",
+        "target users", "target audience", "purpose useful for", "purpose", "useful for",
+        "developer owner", "developer", "owner", "technical requirements", "required inputs",
+    }
+    additional = [(str(name), str(value)) for name, value in columns.items()
+                  if _record_field_key(name) not in shown_keys and str(value).strip()]
+    if additional:
+        with st.expander("Additional details"):
+            for label, value in additional:
+                _record_field(label, value)
 
     links = _tool_lesson_links(tool)
     if links:
@@ -4724,41 +4840,11 @@ def _render_tool_detail(tool_id: str, tool: dict) -> None:
             lesson = topic_by_id(module_id, lesson_id) if module else None
             if module and lesson:
                 with link_cols[idx % len(link_cols)]:
-                    st.button(f"{module['short_title']} · {lesson['title']} →", key=f"tool-learning-link-{tool_id}-{module_id}-{lesson_id}", width="stretch", on_click=navigate, args=("topic", module_id, lesson_id, None, None), kwargs={"_rerun": False})
-
+                    st.button(f"{module['short_title']} · {lesson['title']} →",
+                              key=f"tool-learning-link-{tool_id}-{module_id}-{lesson_id}",
+                              width="stretch", on_click=navigate,
+                              args=("topic", module_id, lesson_id, None, None), kwargs={"_rerun": False})
     _render_tool_preview(tool_id, tool)
-
-    managed_files = [meta for meta in _resource_files_for("tool", tool_id) if not meta.get("archived")]
-    shipped_files = []
-    for file_name in TOOL_DOWNLOAD_FILES.get(tool_id, []):
-        file_path, file_type, error = configured_tool_file(file_name)
-        if file_path and not error:
-            shipped_files.append((file_name, file_path, file_type))
-    if managed_files or shipped_files:
-        st.markdown("<div class='m-section-title'><h2>Resources</h2><p>Download the editable files and supporting material attached to this item.</p></div>", unsafe_allow_html=True)
-        for idx, meta in enumerate(managed_files):
-            _render_resource_download(meta, key=f"tool-detail-managed-{tool_id}-{idx}", button_type="secondary", label=f"Download {meta.get('title') or meta.get('file_name')} ↓")
-        for idx, (file_name, file_path, file_type) in enumerate(shipped_files):
-            st.download_button(f"Download {file_name} ↓", data=file_path.read_bytes(), file_name=file_name, mime=file_type[1], key=f"tool-detail-shipped-{tool_id}-{idx}", width="stretch")
-        if len(managed_files) + len(shipped_files) > 1:
-            data, name, mime_type, count = _tool_download_payload(tool_id, tool)
-            st.download_button(f"Download all {count} resources (.zip) ↓", data=data, file_name=name, mime=mime_type, key=f"tool-detail-all-{tool_id}", type="primary", width="stretch")
-
-    # Import-time attachment attempts persist a copy in managed_files above.
-    # When the source URL could not be imported, offer its safe link instead.
-    attachment_links = tool.get("attachment_links") or []
-    if attachment_links:
-        if not managed_files and not shipped_files:
-            st.markdown("### Supporting files")
-        for idx, item in enumerate(attachment_links):
-            if not isinstance(item, dict) or not _valid_external_url(str(item.get("url") or "")):
-                continue
-            st.link_button(
-                f"Open {item.get('title') or 'supporting file'} ↗",
-                str(item["url"]), key=f"sh-tool-source-link-{tool_id}-{idx}", width="content",
-            )
-    if tool.get("website_url") and _valid_external_url(str(tool["website_url"])):
-        st.link_button("Open website / tool ↗", tool["website_url"], type="primary", width="content")
 
 
 def page_tools(user):
@@ -9066,7 +9152,10 @@ def _sh_download_image(url: str, *, max_bytes: int = 8 * 1024 * 1024) -> tuple[b
     import requests
     parsed = urlparse(str(url or ""))
     host = (parsed.hostname or "").lower()
-    if parsed.scheme != "https" or host not in {"codahosted.io", "coda.io", "www.coda.io"}:
+    if parsed.scheme != "https" or not any(
+        host == root or host.endswith("." + root)
+        for root in ("codahosted.io", "coda.io")
+    ):
         raise ValueError("Image host not supported for persisted imports")
     response = requests.get(url, timeout=25, allow_redirects=False, stream=True)
     try:
@@ -9363,6 +9452,56 @@ def _sh_commit_preview(preview: dict, selection: list[str], *, publish: bool, us
                             results["attachments"] = results.get("attachments", 0) + 1
                         except Exception as ex:
                             results["errors"].append(f"{item['title']} attachment {link.get('title')}: {str(ex)[:125]}")
+                if kind == "tool":
+                    # Image-column cells use an actual Coda-hosted URL from the
+                    # rich API; the simple API exposes only 'Europe.png'.
+                    # Persist bytes once so learner pages never need the API.
+                    previous = get_cms_tool(item["id"])
+                    previous_payload = ((previous or {}).get("published") or
+                                        (previous or {}).get("draft") or {})
+                    if previous_payload.get("image_resource_id"):
+                        item["image_resource_id"] = previous_payload["image_resource_id"]
+                    image_url = str(item.get("image_url") or "")
+                    if image_url:
+                        image_resource_id = "sh-tool-image-" + hashlib.sha256(
+                            f"{item['id']}:{image_url}".encode()).hexdigest()[:24]
+                        cached_image = get_cms_resource_file(image_resource_id)
+                        if cached_image and cached_image.get("file_data"):
+                            item["image_resource_id"] = image_resource_id
+                        else:
+                            try:
+                                image_data, image_mime, image_ext = _sh_download_image(
+                                    image_url, max_bytes=24 * 1024 * 1024)
+                                # Resize source figures to avoid excessive DB
+                                # storage and long page downloads.
+                                from PIL import Image, ImageOps
+                                picture = ImageOps.exif_transpose(Image.open(io.BytesIO(image_data)))
+                                picture.thumbnail((1800, 1300))
+                                image_out = io.BytesIO()
+                                picture.save(image_out, format="WEBP", quality=88, method=6)
+                                image_data, image_mime, image_ext = (
+                                    image_out.getvalue(), "image/webp", ".webp")
+                                save_cms_resource_file(
+                                    image_resource_id, scope_type="tool_image",
+                                    scope_id=item["id"], resource_kind="Image",
+                                    title=str(item.get("title") or "Tool") + " illustration",
+                                    description=str(item.get("image_name") or ""),
+                                    file_name=image_resource_id + image_ext,
+                                    mime_type=image_mime, file_data=image_data,
+                                    sort_order=-100, updated_by=user_id,
+                                )
+                                item["image_resource_id"] = image_resource_id
+                                results["images"] += 1
+                            except Exception as ex:
+                                results["images_skipped"] += 1
+                                results["warnings"].append(
+                                    f"Tool '{item['title']}': image could not be saved "
+                                    f"({str(ex)[:140]}). Existing illustration, if any, was retained.")
+                    elif item.get("_unresolved_image"):
+                        results["warnings"].append(
+                            f"Tool '{item['title']}': only the filename "
+                            f"'{item.get('image_name')}' was returned, not an image URL. "
+                            "Existing illustration was retained if available.")
                 if kind == "resource":
                     if publish:
                         publish_cms_library_resource(item["id"], _normalise_library_resource_payload(item["id"], item), item.get("_source_sort_order", index * 10), user_id)
@@ -9707,7 +9846,10 @@ def _render_superhuman_import(user: dict) -> None:
         st.warning("No records found under this root. Select the learning environment main page and inspect its subpages.")
         return
     choices = {tag: label for tag, label in tags}
-    chosen = st.multiselect("Import these records", list(choices), default=defaults, format_func=lambda k: choices[k], key="sh-import-chosen")
+    chosen = st.multiselect("Import these records", list(choices), default=defaults,
+                            format_func=lambda k: choices[k], key="sh-import-chosen",
+                            help="For a Tools batch, remove any tool you do not want to update. "
+                                 "Only the names left selected are saved/published.")
     selected_lesson = next((e for e in preview["entries"] if e["kind"] == "lesson"), None)
     if selected_lesson:
         with st.expander("Preview a parsed class and its learning cards"):
@@ -9726,6 +9868,26 @@ def _render_superhuman_import(user: dict) -> None:
                 if card.get("image_src_import") or card.get("image_src_imports"):
                     st.caption("Images will be imported when available (8 MB maximum per image). "
                                "An oversized or inaccessible figure is skipped without blocking the class text.")
+    tools_in_preview = (preview.get("libraries") or {}).get("tool") or []
+    if tools_in_preview:
+        with st.expander("Preview a tool's formatted text and image before publishing"):
+            selected_tool_id = st.selectbox(
+                "Tool to inspect", [item["id"] for item in tools_in_preview],
+                format_func=lambda tid: next(item["title"] for item in tools_in_preview if item["id"] == tid),
+                key="sh-preview-tool")
+            example = next(item for item in tools_in_preview if item["id"] == selected_tool_id)
+            st.markdown("**Description**")
+            st.markdown(str(example.get("description_rich") or example.get("description") or "No description"))
+            st.markdown("**How to use**")
+            st.markdown(str(example.get("steps_rich") or example.get("steps_text") or "No instructions"))
+            if example.get("image_url"):
+                st.success("Image URL detected. The image will be downloaded and stored when you import this tool.")
+                st.caption("Image: " + str(example.get("image_name") or example["image_url"]))
+            elif example.get("image_name"):
+                st.warning(f"Image '{example['image_name']}' was found, but the API returned no downloadable URL. "
+                           "The tool will import without replacing an existing image.")
+            else:
+                st.caption("No image in the Tools table for this row.")
     if not chosen:
         st.info("Choose at least one item to import.")
         return
