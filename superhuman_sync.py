@@ -51,6 +51,7 @@ TOOL_COLUMNS = {
     "version": ("version / update date", "version"),
     "supporting_materials": ("supporting materials",),
     "keywords": ("keywords",),
+    "part_of_mosaic": ("part of mosaic", "part of mosaic project"),
 }
 
 
@@ -629,7 +630,13 @@ def table_record_payload(doc_id: str, table_id: str, row: dict, kind: str) -> di
         mapping["image_url"] = _image_url_from_rich(
             _lookup(values, ("Image URL", "Tool image URL", "Image", "Tool image", "Thumbnail")))
         mapping["_unresolved_image"] = bool(mapping["image_name"] and not mapping["image_url"])
-        mapping["status"] = "Available"
+        source_status = _lookup(values, ("Status", "Availability", "Tool status")).strip().casefold()
+        placeholder_description = str(mapping.get("description") or "").strip().casefold()
+        mapping["status"] = (
+            "Under construction" if source_status == "under construction" or
+            (not source_status and placeholder_description == "under construction")
+            else "Available"
+        )
     return mapping
 
 

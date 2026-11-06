@@ -150,7 +150,7 @@ MOSAIC_IMPORT_MAX_BYTES = 25 * 1024 * 1024
 TOOL_FORMATS = ("Workshop", "Website", "Model", "Digital tool")
 TOOL_FORMAT_ICONS = {"Workshop": "◫", "Website": "↗", "Model": "⌁", "Digital tool": "◇"}
 LANDING_STORY_VIDEO_URL = "https://www.youtube.com/watch?v=ppWj_rbRfxw"
-APP_BUILD_ID = "2026-10-20-community-resource-ui-v13"
+APP_BUILD_ID = "2026-11-06-mosaic-search-tool-filter-performance-v21"
 
 
 DEFAULT_STORIES = {
@@ -1056,6 +1056,11 @@ html, body, [class*="css"] { font-family: Poppins, "Segoe UI", Arial, sans-serif
 .m-resource-download-shell { margin:1rem 0 1.4rem; padding:1.05rem 1.1rem .45rem; border:1px solid var(--m-line); border-radius:18px; background:#fff; }
 .m-resource-download-shell h2 { margin:.05rem 0 .3rem; font-size:1.25rem; }
 .m-resource-download-shell p { margin:0 0 .6rem; color:var(--m-muted); font-size:.86rem; }
+.st-key-resources_class_finder, .st-key-catalogue_class_finder {background:linear-gradient(135deg,#f2f7fd 0%,#fff 75%) !important;border-color:#d6e1ef !important;border-radius:20px !important;margin:.95rem 0 1.2rem;box-shadow:0 5px 16px rgba(13,79,158,.025)}
+.m-class-finder-heading {display:flex;align-items:center;gap:.8rem;margin-bottom:.7rem}
+.m-class-finder-heading h2 {font-family:Georgia,Cambria,serif !important;font-weight:400 !important;color:#303b45 !important;font-size:1.48rem !important;margin:0 0 .12rem !important;padding:0 !important}
+.m-class-finder-heading p {font-size:.85rem;margin:0;color:var(--m-muted)}
+.m-class-finder-icon {display:flex;align-items:center;justify-content:center;width:38px;height:38px;border-radius:12px;color:#fff;background:var(--m-blue);font-size:1.4rem;flex-shrink:0}
 .m-agent-shell { margin:1rem 0 1.35rem; padding:1rem 1.05rem; border:1px solid #c8d9d1; border-radius:20px; background:linear-gradient(135deg,#edf5f2 0%,#ffffff 62%,#f1fafb 100%); box-shadow:0 7px 20px rgba(21,105,80,.045); }
 .m-agent-head { display:flex; align-items:center; justify-content:space-between; gap:1rem; margin-bottom:.8rem; }
 .m-agent-identity { display:flex; align-items:center; gap:.7rem; }
@@ -1580,7 +1585,16 @@ def _lesson_content_payload(lesson: dict) -> dict:
 
 
 def _is_under_construction(item: dict | None) -> bool:
-    return str((item or {}).get("status") or "").strip().casefold() == "under construction"
+    """Handle explicit status and already-imported Coda placeholder tools."""
+    item = item or {}
+    if str(item.get("status") or "").strip().casefold() == "under construction":
+        return True
+    if item.get("source_system") == "superhuman_docs" and any(
+        str(item.get(field) or "").strip().casefold() == "under construction"
+        for field in ("description", "description_rich")
+    ):
+        return True
+    return False
 
 
 def _normalise_module_payload(module_id: str, payload: dict | None) -> dict:
@@ -3694,6 +3708,31 @@ def _future_scenarios_first_class(modules: dict) -> tuple[str, str] | None:
     return None
 
 
+def _start_module_for_question(modules: dict, kind: str) -> str | None:
+    """Resolve a published module after Superhuman Docs has assigned a stable ID.
+
+    Prefer the imported module over old content.py defaults. Keep fallbacks
+    for sites that have not yet imported that module.
+    """
+    tokens = {
+        "drivers": ("drivers research", "drivers of change", "driver research", "identifying drivers", "drivers"),
+        "policy-lab": ("policy labs", "policy lab", "participatory policy"),
+        "future-pathways": ("future scenarios", "future pathways", "modelling future"),
+    }.get(kind, ())
+    candidates = []
+    for module_id, module in modules.items():
+        if str(module.get("status") or "Available").casefold() != "available":
+            continue
+        searchable = " ".join(str(module.get(field) or "") for field in ("title", "short_title")).casefold()
+        matching = next((index for index, name in enumerate(tokens) if name in searchable), None)
+        if matching is None and module_id != kind:
+            continue
+        imported = str(module.get("source_system") or "") == "superhuman_docs" or module_id.startswith("sh-")
+        # A newer imported module takes priority over the legacy hardcoded slug.
+        candidates.append((0 if imported else 1, matching if matching is not None else len(tokens), module_id))
+    return min(candidates)[2] if candidates else None
+
+
 def _render_starting_point_guide_catalogue() -> None:
     guide_image = asset_image_html(
         "starting-point-heron.png",
@@ -3737,10 +3776,17 @@ def _render_starting_point_guide_catalogue() -> None:
                         st.button("Explore this class →", key="starting-point-future-scenarios", width="stretch",
                                   on_click=navigate, args=("topic", target_module, target_class, None, None),
                                   kwargs={"_rerun": False})
-                    elif st.button("Choose this question", key=f"starting-point-{module_id}", width="stretch"):
-                        st.session_state.catalogue_recommendation = module_id
-                        st.rerun()
+                    else:
+                        target_module = _start_module_for_question(MODULES, module_id)
+                        if target_module:
+                            st.button("Explore this module →", key=f"starting-point-{module_id}", width="stretch",
+                                      on_click=navigate, args=("module", target_module, None, None, None),
+                                      kwargs={"_rerun": False})
+                        else:
+                            st.caption("This module is not published yet.")
         recommendation_id = st.session_state.get("catalogue_recommendation")
+        if recommendation_id in {"drivers", "policy-lab", "future-pathways"}:
+            recommendation_id = _start_module_for_question(MODULES, recommendation_id) or recommendation_id
         if recommendation_id in MODULES:
             recommended = MODULES[recommendation_id]
             st.markdown(
@@ -3779,9 +3825,9 @@ def _class_search_passages(module: dict, lesson: dict) -> list[str]:
     return clean
 
 
-def render_class_search() -> None:
+def render_class_search(*, key: str = "catalogue-class-search") -> None:
     """Find text inside any published class and open that class directly."""
-    query = st.text_input("Search all classes", key="catalogue-class-search",
+    query = st.text_input("Search all classes", key=key,
                           placeholder="Try biodiversity, scenarios, policy labs, workshops…",
                           help="Searches published class titles, summaries, learning cards, notes, takeaways, quizzes and reflections.").strip()
     if not query:
@@ -3874,8 +3920,9 @@ def page_catalogue(user: dict | None):
     else:
         st.info("You can browse every module without signing in. Sign in when you want to save progress, reflections or results.")
 
-    st.markdown("### Find a class or topic")
-    render_class_search()
+    with st.container(border=True, key="catalogue_class_finder"):
+        st.markdown("<div class='m-class-finder-heading'><span class='m-class-finder-icon'>⌕</span><div><h2>Find a class or topic</h2><p>Search directly inside published lessons, activities and quizzes.</p></div></div>", unsafe_allow_html=True)
+        render_class_search()
     st.markdown("<div class='m-section-title'><h2>All learning modules</h2><p>Start anywhere. Available modules open directly; modules under construction remain visible so you can see what is coming.</p></div>", unsafe_allow_html=True)
     cols = st.columns(3)
     for idx, (module_id, module) in enumerate(MODULES.items()):
@@ -4478,6 +4525,9 @@ def page_resources(user: dict | None):
         _render_resource_detail(selected_id, resources[selected_id])
         return
 
+    with st.container(border=True, key="resources_class_finder"):
+        st.markdown("<div class='m-class-finder-heading'><span class='m-class-finder-icon'>⌕</span><div><h2>Find a class or topic</h2><p>Looking for something specific? Search the learning modules first.</p></div></div>", unsafe_allow_html=True)
+        render_class_search(key="resources-class-search")
     _render_mosaic_learn_agent_placeholder()
 
     if not resources:
@@ -4550,7 +4600,23 @@ def page_resources(user: dict | None):
                       on_click=_navigate_resource_detail, args=(resource_id,),
                       kwargs={"_rerun": False})
 
-def _tool_matches_filters(tool: dict, *, query: str, module_filter: str, format_filter: str, keyword_filter: str) -> bool:
+def _tool_mosaic_membership(tool: dict) -> bool | None:
+    """Exact Coda 'Part of Mosaic' field; blank/legacy records are unknown."""
+    value = tool.get("part_of_mosaic")
+    if value is None or str(value).strip() == "":
+        value = _record_value(tool.get("source_columns") or {}, "Part of Mosaic", "Part of MOSAIC")
+    if isinstance(value, bool):
+        return value
+    normalised = str(value or "").strip().casefold()
+    if normalised in {"yes", "true", "1", "y"}:
+        return True
+    if normalised in {"no", "false", "0", "n"}:
+        return False
+    return None
+
+
+def _tool_matches_filters(tool: dict, *, query: str, module_filter: str, format_filter: str,
+                          keyword_filter: str, mosaic_filter: str = "All") -> bool:
     links = _tool_lesson_links(tool)
     searchable = " ".join([
         str(tool.get("title") or ""), str(tool.get("description") or ""),
@@ -4568,6 +4634,10 @@ def _tool_matches_filters(tool: dict, *, query: str, module_filter: str, format_
         return False
     if keyword_filter != "All keywords" and keyword_filter not in (tool.get("keywords") or []):
         return False
+    if mosaic_filter in {"Yes", "No"}:
+        membership = _tool_mosaic_membership(tool)
+        if membership is None or membership != (mosaic_filter == "Yes"):
+            return False
     return True
 
 
@@ -4595,8 +4665,11 @@ def _safe_embed_url(value: str | None) -> str:
 def _tool_image_id(tool_id: str, tool: dict) -> str:
     """Prefer an imported Image-column photo, then a manually uploaded one."""
     imported_id = str(tool.get("image_resource_id") or "")
-    if imported_id and _resource_image_data_uri(imported_id):
-        return imported_id
+    if imported_id:
+        record = _cached_resource_file(imported_id)
+        if (record and not record.get("archived") and record.get("file_data")
+                and str(record.get("mime_type") or "").startswith("image/")):
+            return imported_id
     rows = _resource_files_for("tool_image", tool_id)
     return str(rows[0].get("resource_id") or "") if rows else ""
 
@@ -4731,13 +4804,7 @@ def _render_tool_detail(tool_id: str, tool: dict) -> None:
     # links, bold text, subheadings, numbered steps, lists and paragraphs.
     description = _tool_rich_markdown(tool.get("description_rich") or tool.get("description"))
     instructions = _tool_rich_markdown(tool.get("steps_rich") or tool.get("steps_text"))
-    description_col, howto_col = st.columns(2, gap="large")
-    with description_col:
-        st.markdown("### Description")
-        if description:
-            st.markdown(description)
-        else:
-            st.caption("Description to be added.")
+    howto_col, description_col = st.columns([1.25, 1], gap="large")
     with howto_col:
         st.markdown("### How to use it")
         if instructions:
@@ -4747,6 +4814,12 @@ def _render_tool_detail(tool_id: str, tool: dict) -> None:
                 st.markdown(f"**{idx}.** {escape(str(step))}")
         else:
             st.caption("Instructions to be added.")
+    with description_col:
+        st.markdown("### Description")
+        if description:
+            st.markdown(description)
+        else:
+            st.caption("Description to be added.")
 
     # Access links and files immediately follow the core guidance, not buried
     # below a duplicate imported raw-record section.
@@ -4865,7 +4938,7 @@ def page_tools(user):
         unsafe_allow_html=True,
     )
     st.markdown("Not sure which tool fits? Start in [Learning](?page=modules), where lessons point to relevant tools in context.")
-    search_col, module_col, format_col, keyword_col = st.columns([2.1, 1.15, 1.05, 1.05])
+    search_col, module_col, format_col, keyword_col, mosaic_col = st.columns([2, 1.1, 1, 1.05, 1.1])
     with search_col:
         query = st.text_input("Search tools", placeholder="Search by name, description or keyword…", key="tools-search-query").strip()
     module_options = ["All modules"] + [module["short_title"] for module in MODULES.values()]
@@ -4877,18 +4950,38 @@ def page_tools(user):
     keyword_options = ["All keywords"] + sorted({word for tool in TOOL_DEFINITIONS.values() for word in (tool.get("keywords") or [])})
     with keyword_col:
         keyword_filter = st.selectbox("Keyword", keyword_options, key="tools-keyword-filter")
+    with mosaic_col:
+        mosaic_filter = st.selectbox("Part of MOSAIC", ["All", "Yes", "No"],
+                                     key="tools-mosaic-filter",
+                                     help="Uses the Yes/No value imported from the Coda Tools table. Tools without a value appear under All only.")
 
     tool_items = [
         (tool_id, tool) for tool_id, tool in TOOL_DEFINITIONS.items()
-        if _tool_matches_filters(tool, query=query, module_filter=module_filter, format_filter=format_filter, keyword_filter=keyword_filter)
+        if _tool_matches_filters(tool, query=query, module_filter=module_filter,
+                                 format_filter=format_filter, keyword_filter=keyword_filter,
+                                 mosaic_filter=mosaic_filter)
     ]
     tool_items.sort(key=lambda item: str(item[1].get("title") or item[0]).casefold())
     st.caption(f"{len(tool_items)} of {len(TOOL_DEFINITIONS)} tools")
     if not tool_items:
         st.info("No tools match these filters.")
         return
+    # Do not decode and embed every imported image in the library on each rerun.
+    # Only the visible page's images are fetched from the existing cached store.
+    page_size = 12
+    page_count = (len(tool_items) + page_size - 1) // page_size
+    if st.session_state.get("tools-library-page") not in range(1, page_count + 1):
+        st.session_state["tools-library-page"] = 1
+    if page_count > 1:
+        page = st.selectbox("Results page", range(1, page_count + 1),
+                            key="tools-library-page",
+                            format_func=lambda number: f"Page {number} of {page_count}")
+    else:
+        page = 1
+    visible = tool_items[(page - 1) * page_size:page * page_size]
+    st.caption(f"Showing {((page - 1) * page_size) + 1}–{((page - 1) * page_size) + len(visible)}")
     cols = st.columns(3, gap="medium")
-    for idx, (tool_id, tool) in enumerate(tool_items):
+    for idx, (tool_id, tool) in enumerate(visible):
         with cols[idx % 3]:
             keywords = tool.get("keywords") or []
             keyword_html = "".join(f"<span class='m-tool-filter-tag'>{escape(word)}</span>" for word in keywords[:4])
@@ -4914,7 +5007,8 @@ def page_tools(user):
             )
             if _is_under_construction(tool):
                 st.link_button("Under construction · subscribe →", MOSAIC_NEWSLETTER_URL, width="stretch")
-            st.button("Open tool →", key=f"tool-open-{tool_id}", type="primary", width="stretch", on_click=navigate, args=("tools", "", "", tool_id, None), kwargs={"_rerun": False})
+            else:
+                st.button("Open tool →", key=f"tool-open-{tool_id}", type="primary", width="stretch", on_click=navigate, args=("tools", "", "", tool_id, None), kwargs={"_rerun": False})
 
 
 def page_learning(user):
