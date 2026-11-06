@@ -3497,7 +3497,7 @@ def page_home(user: dict | None):
         <div class="m-hero m-illustrated-home">
             <div class="m-hero-copy">
                 <div class="m-kicker">MOSAIC Learn</div>
-                <h1><em>MOSAIC Learn:Land Use Change</em> and <em>Management</em> in Europe</h1>
+                <h1>MOSAIC Learn:<em>Land Use Change</em> and <em>Management</em> in Europe</h1>
                 <p>MOSAIC brings practitioners, research partners and policy makers together to understand and influence how land across Europe can be managed more sustainably. Learn turns the project's research and Policy Lab experience into practical journeys, tools and evidence.</p>
                 <div class="m-hero-meta"><span class="m-chip">Self-paced</span><span class="m-chip">Practice-oriented</span><span class="m-chip">Progress saved</span><span class="m-chip">Evidence you can reuse</span></div>
             </div>
