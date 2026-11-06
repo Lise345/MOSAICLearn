@@ -1182,9 +1182,10 @@ html, body, [class*="css"] { font-family: Poppins, "Segoe UI", Arial, sans-serif
    ochre and lime variables above remain untouched. This layer is purely visual. */
 .m-hero.m-illustrated-home { grid-template-columns:minmax(0,1.05fr) minmax(330px,.95fr); background:#fff; border:1px solid #e0e1dc; border-radius:20px; box-shadow:none; }
 .m-illustrated-home .m-hero-copy { padding:clamp(2rem,4vw,3.65rem); }
-.m-illustrated-home .m-hero-copy h1 { font-family:Georgia,Cambria,serif; font-weight:500; font-size:clamp(2.3rem,4.65vw,4.15rem); line-height:1.08; max-width:16ch; }
-.m-illustrated-home .m-hero-copy h1 em { color:var(--m-blue); font-style:normal; }
+.m-illustrated-home .m-hero-copy h1 { font-family:Georgia,Cambria,serif; font-weight:500; font-size:clamp(2.3rem,4.65vw,4.15rem); line-height:1.08; max-width:19ch; }
+.m-illustrated-home .m-hero-copy h1 em { color:var(--m-blue); font-style:italic; font-weight:400; }
 .m-illustrated-home .m-hero-copy p { max-width:63ch; font-size:1.01rem; line-height:1.75; }
+.m-tools-pager-label { text-align:center; padding:.55rem 0; color:var(--m-muted); font-family:Poppins, sans-serif; font-size:.9rem; }
 .m-illustrated-home .m-hero-drawn { background:#fbfcfa; min-height:350px; display:flex; align-items:center; justify-content:center; padding:clamp(1rem,3vw,2rem); }
 .m-hero-loop-image { display:block; width:100%; height:auto; max-height:390px; object-fit:contain; }
 .m-drawing-placeholder { display:flex; flex-direction:column; justify-content:center; align-items:center; gap:.6rem; min-height:230px; border:1px dashed #ccd6d1; border-radius:16px; background:#f7faf8; text-align:center; padding:1.2rem; }
@@ -3496,7 +3497,7 @@ def page_home(user: dict | None):
         <div class="m-hero m-illustrated-home">
             <div class="m-hero-copy">
                 <div class="m-kicker">MOSAIC Learn</div>
-                <h1>Real lessons from <em>Europe's land</em>, ready to put to work</h1>
+                <h1>Lessons on <em>land use change and management</em> in Europe</h1>
                 <p>MOSAIC brings practitioners, research partners and policy makers together to understand and influence how land across Europe can be managed more sustainably. Learn turns the project's research and Policy Lab experience into practical journeys, tools and evidence.</p>
                 <div class="m-hero-meta"><span class="m-chip">Self-paced</span><span class="m-chip">Practice-oriented</span><span class="m-chip">Progress saved</span><span class="m-chip">Evidence you can reuse</span></div>
             </div>
@@ -4920,6 +4921,38 @@ def _render_tool_detail(tool_id: str, tool: dict) -> None:
     _render_tool_preview(tool_id, tool)
 
 
+def _change_tools_library_page(delta: int, page_count: int) -> None:
+    """Move to the neighboring page without touching filter or tool state."""
+    count = max(1, int(page_count))
+    current = int(st.session_state.get("tools-library-page") or 1)
+    st.session_state["tools-library-page"] = max(1, min(count, current + int(delta)))
+
+
+def _render_tools_pager(page: int, page_count: int, *, position: str) -> None:
+    """Compact accessible arrow navigation, displayed above and below results."""
+    if page_count <= 1:
+        return
+    left, indicator, right = st.columns([1, 1.4, 1], gap="small", vertical_alignment="center")
+    with left:
+        st.button(
+            "\u2190 Previous", key=f"tools-page-prev-{position}",
+            disabled=page <= 1, width="stretch",
+            on_click=_change_tools_library_page, args=(-1, page_count),
+        )
+    with indicator:
+        st.markdown(
+            f"<div class='m-tools-pager-label' aria-label='Tools results page {page} of {page_count}'>"
+            f"Page {page} of {page_count}</div>",
+            unsafe_allow_html=True,
+        )
+    with right:
+        st.button(
+            "Next \u2192", key=f"tools-page-next-{position}",
+            disabled=page >= page_count, width="stretch",
+            on_click=_change_tools_library_page, args=(1, page_count),
+        )
+
+
 def page_tools(user):
     selected_tool_id = st.session_state.get("tool_id")
     selected_tool = TOOL_DEFINITIONS.get(selected_tool_id)
@@ -4970,16 +5003,19 @@ def page_tools(user):
     # Only the visible page's images are fetched from the existing cached store.
     page_size = 12
     page_count = (len(tool_items) + page_size - 1) // page_size
-    if st.session_state.get("tools-library-page") not in range(1, page_count + 1):
+    # Changing filters resets the listing to the first page, but leaving a
+    # Tool detail and returning keeps the user's current results page.
+    filters = (query, module_filter, format_filter, keyword_filter, mosaic_filter)
+    if st.session_state.get("tools-library-filter-signature") != filters:
+        st.session_state["tools-library-filter-signature"] = filters
         st.session_state["tools-library-page"] = 1
-    if page_count > 1:
-        page = st.selectbox("Results page", range(1, page_count + 1),
-                            key="tools-library-page",
-                            format_func=lambda number: f"Page {number} of {page_count}")
-    else:
-        page = 1
+    page = max(1, min(page_count, int(st.session_state.get("tools-library-page") or 1)))
+    st.session_state["tools-library-page"] = page
     visible = tool_items[(page - 1) * page_size:page * page_size]
-    st.caption(f"Showing {((page - 1) * page_size) + 1}–{((page - 1) * page_size) + len(visible)}")
+    first_result = ((page - 1) * page_size) + 1
+    last_result = ((page - 1) * page_size) + len(visible)
+    st.caption(f"Showing {first_result}–{last_result} of {len(tool_items)} matching tools")
+    _render_tools_pager(page, page_count, position="top")
     cols = st.columns(3, gap="medium")
     for idx, (tool_id, tool) in enumerate(visible):
         with cols[idx % 3]:
@@ -5009,6 +5045,7 @@ def page_tools(user):
                 st.link_button("Under construction · subscribe →", MOSAIC_NEWSLETTER_URL, width="stretch")
             else:
                 st.button("Open tool →", key=f"tool-open-{tool_id}", type="primary", width="stretch", on_click=navigate, args=("tools", "", "", tool_id, None), kwargs={"_rerun": False})
+    _render_tools_pager(page, page_count, position="bottom")
 
 
 def page_learning(user):
