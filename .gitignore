@@ -7,3 +7,4 @@ mosaic_learn.db
 .vscode/
 .DS_Store
 Thumbs.db
+.streamlit/.secrets

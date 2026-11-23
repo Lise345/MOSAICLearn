@@ -3467,11 +3467,11 @@ def render_sidebar(user: dict | None):
 
         items = [
             ("home", "⌂  Home"),
-            ("our-story", "◌  Our story"),
             ("catalogue", "▦  Learning"),
             ("resources", "▤  Resources"),
             ("tools", "◇  Tools"),
             ("community", "✣  Community"),
+            ("our-story", "◌  Our story"),
         ]
         for key, label in items:
             button_type = "primary" if route == key else "secondary"
