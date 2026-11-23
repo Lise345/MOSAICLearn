@@ -120,8 +120,8 @@ PAGE_ICON_FILE = ASSETS_DIR / "page-icon.png"
 TOOL_FILES_DIR = ASSETS_DIR / "tools"
 # Bump this value whenever the notice text changes. Existing accounts will be
 # shown the non-dismissible re-consent dialog before they can continue.
-PRIVACY_POLICY_VERSION = "2026-09-21"
-PRIVACY_POLICY_EFFECTIVE_DATE = "21 September 2026"
+PRIVACY_POLICY_VERSION = "2026-11-23-auth-options"
+PRIVACY_POLICY_EFFECTIVE_DATE = "23 November 2026"
 # Change this value whenever init_db() gains a migration. It is passed into the
 # cached initializer so Streamlit Cloud cannot reuse a pre-migration cache entry
 # after a hot deployment.
@@ -3012,7 +3012,10 @@ def navigate(
 
 
 def _auth_provider_names() -> list[str]:
-    """Return named OIDC providers configured under [auth.<provider>]."""
+    """List named OIDC connections without exposing their secrets.
+
+    Streamlit requires names such as ``emailpassword``, not underscores.
+    """
     if not auth_is_configured():
         return []
     try:
@@ -3023,11 +3026,30 @@ def _auth_provider_names() -> list[str]:
                 value = auth[key]
             except Exception:
                 continue
-            if hasattr(value, "keys") and key not in {"client_kwargs"}:
+            if hasattr(value, "keys") and key != "client_kwargs":
                 names.append(str(key))
         return names
     except Exception:
         return []
+
+
+def _default_oidc_provider_label() -> str | None:
+    """Allow the existing unnamed Google OIDC configuration to keep working.
+
+    Adding [auth.emailpassword] to an older [auth] configuration must not
+    silently remove its original sign-in button.
+    """
+    if not auth_is_configured():
+        return None
+    try:
+        settings = st.secrets["auth"]
+        keys = ("client_id", "client_secret", "server_metadata_url")
+        if not all(str(settings.get(key, "")).strip() for key in keys):
+            return None
+        discovery_url = str(settings.get("server_metadata_url") or "").lower()
+        return "Google" if "accounts.google.com" in discovery_url else "existing provider"
+    except Exception:
+        return None
 
 
 def _provider_label(provider: str) -> str:
@@ -3035,43 +3057,84 @@ def _provider_label(provider: str) -> str:
         "microsoft": "Microsoft",
         "google": "Google",
         "entra": "Microsoft",
+        "emailpassword": "Email and password",
         "auth0": "Auth0",
         "okta": "Okta",
     }
     return labels.get(provider.lower(), provider.replace("-", " ").title())
 
 
+def _email_claim_is_verified(claims: dict) -> bool:
+    """An unverified password email must never bootstrap ADMIN_EMAILS access."""
+    value = claims.get("email_verified", False)
+    return value is True or (isinstance(value, str) and value.strip().lower() == "true")
+
+
 def _render_sign_in_prompt():
-    """Explain the shared Google sign-in/registration flow and start OIDC."""
+    """Show email/password alongside existing OIDC options when configured.
+
+    Credentials are collected exclusively by the hosted identity provider;
+    MOSAIC Learn does not ask for passwords or store password hashes.
+    """
     st.markdown(
         """
         <div class="m-module-hero learning">
             <div class="m-kicker">MOSAIC Learn</div>
-            <h1>Sign in to continue</h1>
-            <p>Sign in when you are ready to learn, join Community or save your progress. The same Google button works for new and returning learners.</p>
+            <h1>Sign in or create an account</h1>
+            <p>Keep your learning progress, reflections and Community activity in one place.
+            Choose how you would like to sign in.</p>
         </div>
         """,
         unsafe_allow_html=True,
     )
     providers = _auth_provider_names()
-    if providers:
-        cols = st.columns(min(len(providers), 2))
-        for idx, provider in enumerate(providers):
-            with cols[idx % len(cols)]:
+    password_provider = "emailpassword" if "emailpassword" in providers else None
+    if password_provider:
+        st.markdown("#### Email and password")
+        if st.button(
+            "Sign in or create an account with email",
+            key="login-emailpassword",
+            type="primary",
+            width="stretch",
+        ):
+            st.login(password_provider)
+        st.caption(
+            "Opens a secure sign-in page. New here? Select Sign up there to choose "
+            "your email address and password. MOSAIC Learn never receives your password."
+        )
+
+    other_providers = [p for p in providers if p != password_provider]
+    default_label = _default_oidc_provider_label()
+    if other_providers or default_label:
+        if password_provider:
+            st.markdown("#### Or continue with an existing account")
+        provider_buttons = [(provider, f"Continue with {_provider_label(provider)}") for provider in other_providers]
+        if default_label and "google" not in other_providers:
+            provider_buttons.insert(0, (None, f"Continue with {default_label}"))
+        columns = st.columns(min(len(provider_buttons), 2))
+        for idx, (provider, label) in enumerate(provider_buttons):
+            with columns[idx % len(columns)]:
                 if st.button(
-                    f"Continue with {_provider_label(provider)}",
-                    key=f"login-{provider}",
-                    type="primary",
+                    label,
+                    key=f"login-{provider or 'default'}",
+                    type="secondary" if password_provider else "primary",
                     width="stretch",
                 ):
-                    st.login(provider)
-    else:
+                    if provider is None:
+                        st.login()
+                    else:
+                        st.login(provider)
+    elif not password_provider:
+        # Default-only OIDC setups with nonstandard secrets can still log in.
         if st.button("Sign in to MOSAIC Learn", type="primary", width="stretch"):
             st.login()
-    st.caption(
-        "First-time users create a MOSAIC learner profile after Google returns them to the app. "
-        "Returning users resume the profile and progress already linked to their Google identity."
-    )
+
+    if len(providers) + bool(default_label) > 1:
+        st.caption(
+            "Already have a learning profile? Keep using the same sign-in method. "
+            "Different providers create separate identities, even with the same email: "
+            "progress and private reflections are not combined automatically."
+        )
 
 
 def get_current_user(required: bool = True) -> dict | None:
@@ -3101,6 +3164,7 @@ def get_current_user(required: bool = True) -> dict | None:
             "auth_issuer": issuer,
             "auth_subject": subject,
             "demo": False,
+            "email_verified": _email_claim_is_verified(claims),
         }
 
     # Local development fallback. A hosted/PostgreSQL deployment must configure
@@ -3169,7 +3233,7 @@ def render_privacy_notice(*, compact: bool = False) -> None:
 
         **What information is stored**
 
-        - Basic identity information received from Google sign-in: name, email address and a provider-specific account identifier.
+        - Basic identity information received from your chosen sign-in provider (Google or email/password via Auth0, when enabled): name, email address, verification status and a provider-specific identifier. MOSAIC Learn does not receive or store your password.
         - Profile information you choose to provide: professional role, organisation, country or region, and learning interests.
         - Learning activity: completed steps, quick-check results, confidence ratings and private reflections.
         - Content you actively share, such as Community posts and public result summaries.
@@ -3183,7 +3247,7 @@ def render_privacy_notice(*, compact: bool = False) -> None:
 
         **Services involved**
 
-        Google provides sign-in, Streamlit Community Cloud hosts the application, and Supabase/PostgreSQL stores production application data. These providers process information according to their own terms and the configuration selected by the MOSAIC Learn operators.
+        Google provides social sign-in and, when enabled, Auth0 manages email/password registration, password verification and account recovery. Streamlit Community Cloud hosts the application, and Supabase/PostgreSQL stores production learning data. Identity-provider passwords are managed by the identity provider, not the MOSAIC Learn database. The providers process information according to their own terms and the configuration selected by the MOSAIC Learn operators.
 
         **Visibility and sharing**
 
@@ -3191,11 +3255,11 @@ def render_privacy_notice(*, compact: bool = False) -> None:
 
         **Retention and deletion**
 
-        Account-linked information is kept while your account remains active. You can permanently delete the live account and its linked learning data from **My profile**. Temporary infrastructure backups may remain for a limited period according to the hosting and database providers' backup schedules.
+        Account-linked information is kept while your MOSAIC Learn profile is active. You can delete the MOSAIC Learn profile and linked learning data from **My profile**. Your separate Google or Auth0 sign-in identity is managed by the authentication provider and is not deleted by that action; contact the project team if you also want the authentication identity deleted. Temporary infrastructure backups may remain for a limited period according to provider backup schedules.
 
         **Your choices and rights**
 
-        You can view and edit your profile, withdraw consent by deleting your account, and contact the address above to ask about access, correction, restriction, portability, objection or deletion. You may also have the right to lodge a complaint with your national data-protection authority.
+        You can view and edit your profile, withdraw consent by deleting your MOSAIC Learn profile, and contact the address above to ask about access, correction, restriction, portability, objection or full deletion of your sign-in identity. You may also have the right to lodge a complaint with your national data-protection authority.
 
         **Changes to this notice**
 
@@ -3242,7 +3306,10 @@ def ensure_profile(user: dict) -> dict:
         user.get("auth_issuer", ""),
         user.get("auth_subject", ""),
     )
-    bootstrap_admin = bool(user.get("demo")) or user.get("email", "").strip().lower() in _configured_admin_emails()
+    bootstrap_admin = bool(user.get("demo")) or (
+        bool(user.get("email_verified"))
+        and user.get("email", "").strip().lower() in _configured_admin_emails()
+    )
     if bootstrap_admin and stored.get("account_role") != "administrator":
         _save_account_role(user["user_id"], "administrator")
         stored = get_user(user["user_id"]) or stored
@@ -3497,7 +3564,7 @@ def page_home(user: dict | None):
         <div class="m-hero m-illustrated-home">
             <div class="m-hero-copy">
                 <div class="m-kicker">MOSAIC Learn</div>
-                <h1>MOSAIC Learn:  <em>Land Use Change</em> and <em>Management</em> in Europe</h1>
+                <h1>Lessons on <em>land use change and management</em> in Europe</h1>
                 <p>MOSAIC brings practitioners, research partners and policy makers together to understand and influence how land across Europe can be managed more sustainably. Learn turns the project's research and Policy Lab experience into practical journeys, tools and evidence.</p>
                 <div class="m-hero-meta"><span class="m-chip">Self-paced</span><span class="m-chip">Practice-oriented</span><span class="m-chip">Progress saved</span><span class="m-chip">Evidence you can reuse</span></div>
             </div>
@@ -7019,13 +7086,15 @@ def page_profile(user):
               kwargs={"state_updates": {"learning-hub-section": "My learning"}})
 
     st.markdown(
-        "<div class='m-section-title'><h2>Delete my account</h2><p>Permanently remove this profile and its linked MOSAIC Learn data.</p></div>",
+        "<div class='m-section-title'><h2>Delete my MOSAIC Learn profile</h2><p>Permanently remove learning data stored in this app.</p></div>",
         unsafe_allow_html=True,
     )
-    with st.expander("Delete account and learning data"):
+    with st.expander("Delete my profile and learning data"):
         st.warning(
-            "This permanently deletes your profile, progress, quick-check results, private reflections, "
-            "Community posts, public share links and privacy-consent history. It does not delete your Google account."
+            "This deletes your MOSAIC Learn profile, progress, quick-check results, private reflections, "
+            "Community posts, public share links and privacy-consent history. "
+            "It does NOT delete the Google or Auth0 sign-in identity itself. "
+            "Contact the project team if you also want the authentication account deleted."
         )
         deletion_understood = st.checkbox(
             "I understand that this action cannot be undone.",
@@ -7036,7 +7105,7 @@ def page_profile(user):
             key="delete-account-confirmation",
         )
         if st.button(
-            "Permanently delete my account",
+            "Permanently delete my MOSAIC Learn data",
             key="delete-account",
             type="primary",
             disabled=not deletion_understood or deletion_phrase.strip() != "DELETE",
