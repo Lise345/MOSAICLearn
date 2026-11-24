@@ -6378,10 +6378,11 @@ def page_community(user):
     post_count = len(posts)
     reflection_label = "reflection" if post_count == 1 else "reflections"
     mycelium_is_member = bool(mycelium_state.get("is_member"))
-    mycelium_member_count = len(mycelium_state.get("members", [])) if mycelium_is_member else 0
+    mycelium_member_count = (len(mycelium_state.get("members", [])) if mycelium_is_member
+                             else int(mycelium_state.get("member_count") or 0))
     mycelium_request_count = len(mycelium_state.get("incoming", [])) if mycelium_is_member else 0
-    mycelium_member_value = str(mycelium_member_count) if mycelium_is_member else "—"
-    mycelium_member_label = "Mycelium members" if mycelium_is_member else "Mycelium network"
+    mycelium_member_value = str(mycelium_member_count)
+    mycelium_member_label = "Mycelium members" if mycelium_is_member else "Members in the network"
 
     st.markdown(
         f"""
@@ -6412,8 +6413,8 @@ def page_community(user):
     section = st.session_state.get("community-section", "explore")
 
     section_to_label = {
-        "explore": "Discussion",
         "mycelium": "Our mycelium",
+        "explore": "Discussion",
         "notifications": "Notifications",
     }
     label_to_section = {label: key for key, label in section_to_label.items()}
@@ -6644,24 +6645,56 @@ def page_community(user):
         )
         state = mycelium_state
         if not state.get("is_member"):
+            # Non-members only see anonymous placeholders; membership counts
+            # are read by db.get_mycelium_state without revealing user details.
             st.markdown(
                 """
                 <div class="m-mycelium-optin">
-                    <div class="m-kicker">Optional network</div>
-                    <h3>Join Our mycelium</h3>
-                    <p>Join the learner network to discover people working in other places and contexts. Your name, organisation and country/region become visible to other Mycelium members. Every connection still requires an invitation and acceptance, and your email is only shared when you explicitly choose to share it.</p>
+                    <div class="m-kicker">Explore the network</div>
+                    <p>Explore the people already growing this network. Click an empty
+                    spot on the Mycelium to join. Your name, organisation and
+                    country/region become visible to other members only after consent.</p>
                 </div>
                 """,
                 unsafe_allow_html=True,
             )
-            if st.button(
-                "Join Our mycelium",
-                type="primary",
-                key="mycelium-join",
-            ):
-                join_mycelium(user_id)
-                _clear_community_interaction_caches()
-                st.rerun()
+            network_event = _mycelium_network(
+                members=[],
+                connections=[],
+                pending=[],
+                current_user_id="",
+                blocked_user_ids=[],
+                is_member=False,
+                preview_member_count=int(state.get("member_count") or 0),
+                join_error=st.session_state.pop("mycelium-join-error", ""),
+                default=None,
+                key="mycelium-network",
+            )
+            if (isinstance(network_event, dict)
+                    and network_event.get("type") == "join"
+                    and network_event.get("consent") is True):
+                nonce = str(network_event.get("nonce") or "")
+                nonce_key = "mycelium-last-join-component-event"
+                if nonce and st.session_state.get(nonce_key) != nonce:
+                    st.session_state[nonce_key] = nonce
+                    try:
+                        join_mycelium(user_id)
+                        # Confirm a persisted row rather than claiming success
+                        # just because the component emitted a click.
+                        saved = get_mycelium_state(user_id)
+                        if not saved.get("is_member"):
+                            raise RuntimeError("Mycelium membership was not visible after saving")
+                    except Exception:
+                        import logging
+                        logging.getLogger(__name__).exception("Mycelium join failed")
+                        st.session_state["mycelium-join-error"] = (
+                            "Could not save your membership. Please try again."
+                        )
+                        st.rerun()
+                    else:
+                        st.session_state.pop("mycelium-join-error", None)
+                        _clear_community_interaction_caches()
+                        st.rerun()
         else:
             members = state.get("members", [])
             incoming = state.get("incoming", [])
@@ -6695,6 +6728,7 @@ def page_community(user):
                     pending=pending_edges,
                     current_user_id=user_id,
                     blocked_user_ids=state.get("blocked_user_ids", []),
+                    is_member=True,
                     default=None,
                     key="mycelium-network",
                 )
