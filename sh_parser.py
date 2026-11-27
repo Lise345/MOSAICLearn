@@ -326,6 +326,7 @@ def _blocks(html_document: str) -> list[dict[str, Any]]:
     soup = BeautifulSoup(html_document, "html.parser")
     root = soup.body or soup
     blocks: list[dict[str, Any]] = []
+    list_groups: dict[int, str] = {}
 
     def walk(e: Any) -> None:
         if not isinstance(e, Tag):
@@ -346,6 +347,18 @@ def _blocks(html_document: str) -> list[dict[str, Any]]:
         if n == "img":
             blocks.append({"kind": "image", "src": e.get("src", ""),
                            "alt": e.get("alt", ""), "html": str(e)}); return
+        if n == "li" and not e.find(["ul", "ol", "table", "img", "video", "iframe"]):
+            # Coda exports real <li> tags. Flattening them to plain paragraphs
+            # discarded bullet and numbered-list formatting in the app.
+            list_parent = e.find_parent(["ul", "ol"])
+            group = list_groups.setdefault(id(list_parent), f"list-{len(list_groups) + 1}")
+            text = re.sub(r"[ \t]+", " ", e.get_text(" ", strip=True)).strip()
+            if text:
+                blocks.append({"kind": "text", "text": text, "html": str(e),
+                               "links": _block_links(e), "list_kind": list_parent.name if list_parent else "ul",
+                               "list_group": group,
+                               "list_start": str(list_parent.get("start") or "") if list_parent else ""})
+            return
         if n in {"video", "iframe"}:
             src = e.get("src", "")
             if not src and n == "video":
@@ -540,13 +553,19 @@ def parse_units(html_document: str, flag_titles: Iterable[str] | None = None) ->
                     # The title is rendered as the card heading, not a second
                     # paragraph within the comparison table card.
                     continue
-                content_parts.append({"type": "text", "text": block["text"]})
+                if block.get("list_kind") in {"ul", "ol"}:
+                    content_parts.append({"type": "list_item", "text": block["text"],
+                                          "list_kind": block["list_kind"],
+                                          "list_group": block.get("list_group", ""),
+                                          "list_start": block.get("list_start", "")})
+                else:
+                    content_parts.append({"type": "text", "text": block["text"]})
             elif block["kind"] in {"image", "video", "table"}:
                 content_parts.append({"type": block["kind"],
                                       **({"rows": block["rows"]} if block["kind"] == "table"
                                          else {"src": block.get("src", "")})})
         plain_text_without_notes = "\n".join(part["text"] for part in content_parts
-                                             if part["type"] == "text")
+                                             if part["type"] in {"text", "list_item"})
         detection = (
             "native_html_callout" if first["kind"] == "callout" else
             "inferred_from_label" if _is_standalone_label(first) else

@@ -15,7 +15,8 @@ from bs4 import BeautifulSoup
 from sh_api_client import export_page_html, list_pages, list_table_rows, list_tables, _request
 from sh_parser import parse_units
 
-BLOCK_NAMES = {"discover": "Understand", "understand": "Understand", "apply": "Apply", "convince": "Convince", "share": "Convince", "communicate": "Convince", "communication": "Convince"}
+BLOCK_NAMES = {"discover": "Understand", "understand": "Understand", "apply": "Apply", "convince": "Convince", "share": "Convince", "communicate": "Convince", "communication": "Convince",
+               "communication resources": "Convince", "communicate resources": "Convince"}
 RESOURCE_COLUMNS = {
     "title": ("title", "resource name", "name"),
     "resource_type": ("resource type", "type"),
@@ -31,6 +32,7 @@ RESOURCE_COLUMNS = {
     "license": ("license",),
     "language": ("language",),
     "keywords": ("keywords", "tags"),
+    "related_modules": ("related modules", "related module(s)", "related module"),
 }
 TOOL_COLUMNS = {
     "title": ("title", "tool name", "name"),
@@ -52,6 +54,7 @@ TOOL_COLUMNS = {
     "supporting_materials": ("supporting materials",),
     "keywords": ("keywords",),
     "part_of_mosaic": ("part of mosaic", "part of mosaic project"),
+    "related_modules": ("related modules", "related module(s)", "related module"),
 }
 
 
@@ -107,6 +110,18 @@ def _ordered_page_hierarchy(pages: list[dict]) -> tuple[dict, dict, dict]:
     return by_id, inferred_parent, groups
 
 
+def _phase_level(name: str) -> str | None:
+    value = " ".join(str(name or "").casefold().split())
+    if value in BLOCK_NAMES:
+        return BLOCK_NAMES[value]
+    # A phase page can be titled "Communication resources for Policy Labs".
+    # Do not accidentally classify an unrelated lesson as an entire phase.
+    for prefix in ("communication resources for ", "communicate resources for "):
+        if value.startswith(prefix) and len(value) > len(prefix):
+            return "Convince"
+    return None
+
+
 def page_tree(pages: list[dict], root_id: str) -> list[dict]:
     """Return modules and classes in actual sidebar order and hierarchy.
 
@@ -133,22 +148,22 @@ def page_tree(pages: list[dict], root_id: str) -> list[dict]:
         # reference was returned. A reserved phase title is never a lesson.
         nested_phases = []
         for phase in direct_children:
-            if str(phase.get("name") or "").strip().casefold() not in BLOCK_NAMES:
+            if not _phase_level(str(phase.get("name") or "")):
                 continue
             nested_phases.extend(
                 grandchild for grandchild in children.get(str(phase["id"]), [])
-                if str(grandchild.get("name") or "").strip().casefold() in BLOCK_NAMES
+                if _phase_level(str(grandchild.get("name") or ""))
             )
         direct_ids = {str(child["id"]) for child in direct_children}
         direct_children.extend(phase for phase in nested_phases if str(phase["id"]) not in direct_ids)
         for child in direct_children:
             child_id = str(child["id"])
             name = str(child.get("name", "")).strip()
-            block = BLOCK_NAMES.get(name.casefold())
+            block = _phase_level(name)
             if block:
                 block_pages.append({"page": child, "level": block})
                 for lesson in children.get(child_id, []):
-                    if str(lesson.get("name") or "").strip().casefold() in BLOCK_NAMES:
+                    if _phase_level(str(lesson.get("name") or "")):
                         continue  # This is another phase, not a Discover/Apply class.
                     lid = str(lesson["id"])
                     if lid not in seen_lesson_ids:
@@ -217,7 +232,7 @@ def page_intro_and_objectives(exported_html: str) -> tuple[str, list[str]]:
     if not intro:
         # A heading-3 starting lesson is not a landing-page intro.
         intro = []
-    return " ".join(intro)[:1200], objectives
+    return " ".join(intro), objectives
 
 
 def _escape(text: str) -> str:
@@ -278,8 +293,24 @@ def _rich_html(unit: dict) -> str:
     Images are handled separately by the app to keep figures below paragraphs.
     """
     pieces = []
+    open_list = None
     for part in unit.get("content_parts") or []:
         typ = part.get("type")
+        if typ == "list_item":
+            tag = "ol" if part.get("list_kind") == "ol" else "ul"
+            group = (tag, part.get("list_group") or "")
+            if open_list != group:
+                if open_list:
+                    pieces.append(f"</{open_list[0]}>")
+                start_at = str(part.get("list_start") or "")
+                start_attr = f' start="{int(start_at)}"' if tag == "ol" and start_at.isdigit() else ""
+                pieces.append(f"<{tag}{start_attr}>")
+                open_list = group
+            pieces.append("<li>" + _escape(part.get("text") or "") + "</li>")
+            continue
+        if open_list:
+            pieces.append(f"</{open_list[0]}>")
+            open_list = None
         if typ == "text":
             value = str(part.get("text") or "").strip()
             if not value:
@@ -320,6 +351,8 @@ def _rich_html(unit: dict) -> str:
             url = _safe_link(part.get("src", ""))
             if url:
                 pieces.append(f'<p><a href="{_escape(url)}">Watch the video</a></p>')
+    if open_list:
+        pieces.append(f"</{open_list[0]}>")
     return "".join(pieces)
 
 
@@ -379,7 +412,7 @@ def lesson_payload(doc_id: str, page: dict, level: str, parsed: dict) -> dict:
     description = next((u.get("text_without_inline_notes") for u in units if u.get("type") == "text"), "") or ""
     payload = {
         "id": lesson_id, "title": str(page.get("name") or "Untitled class"),
-        "summary": description[:230], "body": description[:1000],
+        "summary": description, "body": description,
         "level": level, "minutes": max(3, min(40, 3 * len(cards))),
         "theory_cards": cards,
         "takeaway": "\n".join(_list_items(takeaways.get("text", ""))) if takeaways else "",
@@ -571,6 +604,35 @@ def enrich_tool_from_rich_row(record: dict, rich_row: dict) -> None:
                 break
 
 
+def _resolve_related_module_names(raw, modules: list[dict]) -> list[str]:
+    """Match abbreviated SHD related-module titles to stable module IDs.
+
+    Exact names win (e.g. 'Policy Labs' beats 'Policy Labs for Land-Use Change').
+    Ambiguous or phase-only labels are intentionally left unresolved.
+    """
+    def norm(v):
+        return re.sub(r"[^a-z0-9]+", " ", str(v or "").casefold()).strip()
+    candidates = []
+    for module in modules:
+        page = module.get("page") or {}
+        title = norm(page.get("name"))
+        mid = module.get("module_id") or ""
+        if title and mid:
+            candidates.append((mid, title))
+    values = raw if isinstance(raw, list) else re.split(r"[,;|\n]", str(raw or ""))
+    matched = []
+    for value in values:
+        q = norm(value)
+        if not q or q in {"discover", "apply", "convince", "communicate", "communication resources"}:
+            continue
+        exact = [mid for mid, title in candidates if title == q]
+        prefix = [mid for mid, title in candidates if title.startswith(q + " ") or q.startswith(title + " ")] if len(q) >= 7 else []
+        options = exact or prefix
+        if len(options) == 1 and options[0] not in matched:
+            matched.append(options[0])
+    return matched
+
+
 def table_record_payload(doc_id: str, table_id: str, row: dict, kind: str) -> dict:
     """Copy table columns using their actual names, including extras as source_columns."""
     values = _column_values(row)
@@ -587,7 +649,10 @@ def table_record_payload(doc_id: str, table_id: str, row: dict, kind: str) -> di
         mapping["origin"] = "MOSAIC content"
         mapping["tags"] = [x.strip() for x in mapping.pop("keywords", "").replace(";", ",").split(",") if x.strip()]
         mapping["source_page_url"] = mapping.get("source_page_url") or str(row.get("browserLink") or "")
-        mapping["related_modules"] = []
+        # Retain explicit SHD related-module labels even for resource-only
+        # batches; build_preview resolves known module titles to stable IDs.
+        mapping["related_modules"] = [part.strip() for part in re.split(
+            r"[,;|\n]", str(mapping.get("related_modules") or "")) if part.strip()]
         # Optional field; linking a row from a page is sufficient without it.
         mapping["learning_phases"] = [p.strip().casefold() for p in re.split(
             r"[,;\n]", _lookup(values, ("Learning phase", "Learning phases", "Phase"))) if p.strip()]
@@ -800,7 +865,7 @@ def build_preview(doc_id: str, root_page: dict, pages: list[dict], token: str,
         payload = {
             "id": module_id, "title": str(page.get("name") or "Untitled module"),
             "short_title": str(page.get("name") or "Untitled module"),
-            "description": intro[:500], "learning_outcomes": objectives,
+            "description": intro, "learning_outcomes": objectives,
             "cover_image_url": inline_cover or metadata_cover,
             # If a body figure is unavailable when explicitly importing,
             # a Superhuman Docs page cover may still be usable.
@@ -917,11 +982,16 @@ def build_preview(doc_id: str, root_page: dict, pages: list[dict], token: str,
     modules_by_title = {str(m["page"].get("name") or "").casefold().strip():
                         stable_id("module", doc_id, str(m["page"]["id"]))
                         for m in all_modules}
+    specs = [{"page": m["page"], "module_id": stable_id("module", doc_id, str(m["page"]["id"]))}
+             for m in all_modules]
     for record in library["resource"]:
-        linked_modules = _lookup(_column_values({"values": record.get("source_columns") or {}}),
-                                 ("Related module(s)", "Related modules"))
-        record["related_modules"] = [mid for title, mid in modules_by_title.items()
-                                      if title and title in linked_modules.casefold()]
+        linked = _lookup(_column_values({"values": record.get("source_columns") or {}}),
+                         ("Related module(s)", "Related modules"))
+        record["related_modules"] = _resolve_related_module_names(linked, specs)
+    for record in library["tool"]:
+        # Works even when importing *only* a batch of Tools, without lessons.
+        record["related_modules"] = _resolve_related_module_names(
+            record.get("related_modules") or "", specs)
     # Optional table phase metadata can supplement, but not replace, @ links.
     for entry in entries:
         if entry["kind"] != "module":
